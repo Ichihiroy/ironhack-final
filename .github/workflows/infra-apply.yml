@@ -1,0 +1,56 @@
+name: infra-apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+
+# Never cancel a running apply (state corruption risk); queue instead.
+concurrency:
+  group: infra-apply
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  TF_DIR: infra/terraform
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true"
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PLATFORM_RW }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    # Human gate: 'production' has a required reviewer. The RW identity's
+    # federated credential ONLY matches this environment, so the credentials
+    # physically cannot be used from an unreviewed context.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform init
+        run: |
+          terraform -chdir=${{ env.TF_DIR }} init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=infra.tfstate"
+
+      - name: Terraform plan
+        run: terraform -chdir=${{ env.TF_DIR }} plan -input=false -out=tfplan
+
+      - name: Terraform apply (the reviewed plan file, nothing else)
+        run: terraform -chdir=${{ env.TF_DIR }} apply -input=false tfplan
+
+      - name: Show outputs
+        run: terraform -chdir=${{ env.TF_DIR }} output

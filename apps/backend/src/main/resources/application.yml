@@ -1,0 +1,31 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: backend
+  datasource:
+    # Defaults match docker-compose; in AKS these env vars come from the
+    # Key Vault-synced Kubernetes Secret (CSI driver). See security/ and deploy/backend.
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/appdb}
+    username: ${SPRING_DATASOURCE_USERNAME:app}
+    password: ${SPRING_DATASOURCE_PASSWORD:localdev}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        # Readiness includes the DB check: a pod only receives traffic once it can
+        # reach the database, which end-to-end-validates the Key Vault secret wiring.
+        readiness:
+          include: readinessState,db
+  metrics:
+    tags:
+      application: ${spring.application.name}

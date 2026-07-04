@@ -1,0 +1,145 @@
+name: backend-ci-cd
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+  push:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  IMAGE_NAME: backend
+  CONTEXT: apps/backend
+
+jobs:
+  # ── Stage 1: compile + unit tests (fail fast, no Docker, no cloud) ──
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Maven verify
+        working-directory: ${{ env.CONTEXT }}
+        run: ./mvnw -B verify
+
+  # ── Stage 2: image build → Trivy gate → (main only) push to ACR ──
+  image:
+    runs-on: ubuntu-latest
+    needs: test
+    permissions:
+      contents: read
+      id-token: write # only exercised on main (ACR push via OIDC)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (load only, no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.CONTEXT }}
+          load: true
+          push: false
+          tags: ${{ env.IMAGE_NAME }}:candidate
+
+      - name: Trivy scan (gate on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.29.0
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:candidate
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Azure login (OIDC, app-ci identity)
+        if: github.event_name == 'push'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_APP }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Push immutable sha tag (+ moving :main alias, never used for pinning)
+        if: github.event_name == 'push'
+        run: |
+          az acr login --name "${ACR%%.*}"
+          docker tag "$IMAGE_NAME:candidate" "$ACR/$IMAGE_NAME:sha-${GITHUB_SHA::7}"
+          docker tag "$IMAGE_NAME:candidate" "$ACR/$IMAGE_NAME:main"
+          docker push "$ACR/$IMAGE_NAME:sha-${GITHUB_SHA::7}"
+          docker push "$ACR/$IMAGE_NAME:main"
+        env:
+          ACR: ${{ vars.ACR_LOGIN_SERVER }}
+
+  # ── Stage 3: staging deploy (main only) ──
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: image
+    if: github.event_name == 'push'
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_APP }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Helm deploy → app-staging
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ vars.APP_RESOURCE_GROUP }}" \
+            --name "${{ vars.AKS_NAME }}" --overwrite-existing
+          helm upgrade --install backend deploy/backend \
+            --namespace app-staging --create-namespace \
+            --set image.repository="${{ vars.ACR_LOGIN_SERVER }}/backend" \
+            --set image.tag="sha-${GITHUB_SHA::7}" \
+            --set serviceAccount.azureClientId="${{ vars.APP_IDENTITY_CLIENT_ID }}" \
+            --set secretProviderClass.keyVaultName="${{ vars.KEY_VAULT_NAME }}" \
+            --set secretProviderClass.tenantId="${{ vars.AZURE_TENANT_ID }}" \
+            --wait --timeout 5m
+
+  # ── Stage 4: production deploy (gated by required reviewer) ──
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_APP }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Helm deploy → app-production
+        run: |
+          az aks get-credentials \
+            --resource-group "${{ vars.APP_RESOURCE_GROUP }}" \
+            --name "${{ vars.AKS_NAME }}" --overwrite-existing
+          helm upgrade --install backend deploy/backend \
+            --namespace app-production --create-namespace \
+            --set image.repository="${{ vars.ACR_LOGIN_SERVER }}/backend" \
+            --set image.tag="sha-${GITHUB_SHA::7}" \
+            --set serviceAccount.azureClientId="${{ vars.APP_IDENTITY_CLIENT_ID }}" \
+            --set secretProviderClass.keyVaultName="${{ vars.KEY_VAULT_NAME }}" \
+            --set secretProviderClass.tenantId="${{ vars.AZURE_TENANT_ID }}" \
+            --wait --timeout 5m

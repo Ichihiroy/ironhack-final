@@ -1,0 +1,56 @@
+# Alert rules picked up by the kube-prometheus-stack Prometheus
+# (ruleSelectorNilUsesHelmValues: false). Runbook: docs/runbook.md.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: app-alerts
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: app-alerts
+spec:
+  groups:
+    - name: backend-api
+      rules:
+        - alert: BackendHigh5xxRate
+          expr: |
+            sum(rate(http_server_requests_seconds_count{status=~"5..", application="backend"}[5m]))
+              /
+            sum(rate(http_server_requests_seconds_count{application="backend"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backend 5xx error rate above 5% for 5m"
+            runbook: "docs/runbook.md#high-5xx-rate"
+        - alert: BackendHighP95Latency
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(http_server_requests_seconds_bucket{application="backend", uri!~"/actuator.*"}[5m]))
+            ) > 0.3
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Backend p95 latency above 300ms for 10m"
+            runbook: "docs/runbook.md#elevated-p95-latency"
+
+    - name: workloads
+      rules:
+        - alert: PodCrashLooping
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace=~"app-.*"}[15m]) > 3
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} is restarting repeatedly (CrashLoopBackOff)"
+            runbook: "docs/runbook.md#crashloopbackoff"
+        - alert: PodsUnschedulable
+          expr: |
+            sum(kube_pod_status_phase{phase="Pending", namespace=~"app-.*"}) > 0
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Pods pending >10m in {{ $labels.namespace }} — capacity or scheduling constraint problem"
+            runbook: "docs/runbook.md#unschedulable-pods"

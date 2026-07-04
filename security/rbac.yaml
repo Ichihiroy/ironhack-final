@@ -1,0 +1,83 @@
+# In-cluster RBAC. The app ServiceAccounts themselves are chart-managed
+# (deploy/*/templates/serviceaccount.yaml) and deliberately have NO Role
+# bound — the apps never touch the Kubernetes API (least privilege = zero).
+#
+# These roles are for humans/CI once AKS Entra ID integration is enabled;
+# replace the placeholder group object ids. With local cluster accounts
+# (current setup) they are inert but document the intended model.
+---
+# Read-only troubleshooting access for developers, per app namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: developer-view
+  namespace: app-production
+rules:
+  - apiGroups: ["", "apps", "autoscaling", "networking.k8s.io", "policy"]
+    resources:
+      - pods
+      - pods/log
+      - services
+      - endpoints
+      - deployments
+      - replicasets
+      - horizontalpodautoscalers
+      - networkpolicies
+      - poddisruptionbudgets
+      - events
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developer-view
+  namespace: app-production
+subjects:
+  - kind: Group
+    # Entra ID group object id for developers (placeholder — set when AAD
+    # integration is enabled)
+    name: "00000000-0000-0000-0000-00000000dev0"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: developer-view
+  apiGroup: rbac.authorization.k8s.io
+---
+# Deploy rights for the CI identity, scoped to exactly what `helm upgrade`
+# of these charts touches — no cluster-scope, no other namespaces.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ci-deployer
+  namespace: app-production
+rules:
+  - apiGroups: ["", "apps", "autoscaling", "networking.k8s.io", "policy"]
+    resources:
+      - deployments
+      - services
+      - serviceaccounts
+      - secrets
+      - configmaps
+      - horizontalpodautoscalers
+      - poddisruptionbudgets
+      - networkpolicies
+      - ingresses
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["secrets-store.csi.x-k8s.io"]
+    resources: ["secretproviderclasses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-deployer
+  namespace: app-production
+subjects:
+  - kind: Group
+    # Entra ID object id of the app-ci service principal (placeholder)
+    name: "00000000-0000-0000-0000-000000000ci0"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: ci-deployer
+  apiGroup: rbac.authorization.k8s.io

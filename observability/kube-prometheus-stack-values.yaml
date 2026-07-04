@@ -1,0 +1,38 @@
+# Helm values for kube-prometheus-stack (namespace: monitoring).
+# Install command in observability/README.md. Grafana admin password is passed
+# at install time (--set grafana.adminPassword=...), never committed.
+fullnameOverride: kps
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    # Pick up ServiceMonitors/PrometheusRules from ALL namespaces, not only
+    # those labeled with the Helm release — required for observability/*.yaml.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+
+alertmanager:
+  enabled: true
+
+grafana:
+  enabled: true
+  # Dashboards are loaded from ConfigMaps labeled grafana_dashboard=1
+  # (see observability/README.md for the one-liner per JSON file).
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+  defaultDashboardsEnabled: true
+
+# Scheduling: monitoring runs on the user pool with the apps
+nodeExporter:
+  enabled: true
+kubeStateMetrics:
+  enabled: true

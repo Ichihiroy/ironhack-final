@@ -1,0 +1,81 @@
+name: infra-plan
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+
+concurrency:
+  group: infra-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {} # least privilege by default; jobs opt in
+
+env:
+  TF_DIR: infra/terraform
+  # Terraform azurerm OIDC auth — read-only identity, no secrets anywhere
+  ARM_USE_OIDC: "true"
+  ARM_USE_AZUREAD: "true" # state backend auth via Entra (Storage Blob Data Contributor)
+  ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PLATFORM_RO }}
+  ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC token for Azure
+      pull-requests: write # plan summary comment
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform fmt
+        run: terraform -chdir=${{ env.TF_DIR }} fmt -check -recursive
+
+      - name: Terraform init (remote state, injected backend config)
+        run: |
+          terraform -chdir=${{ env.TF_DIR }} init -input=false \
+            -backend-config="resource_group_name=${{ vars.TFSTATE_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ vars.TFSTATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ vars.TFSTATE_CONTAINER }}" \
+            -backend-config="key=infra.tfstate"
+
+      - name: Terraform validate
+        run: terraform -chdir=${{ env.TF_DIR }} validate
+
+      - name: Terraform plan
+        id: plan
+        run: |
+          terraform -chdir=${{ env.TF_DIR }} plan -input=false -no-color \
+            -out=tfplan | tee plan.txt
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.event.pull_request.number }}
+          path: |
+            ${{ env.TF_DIR }}/tfplan
+            plan.txt
+          retention-days: 14
+
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('plan.txt', 'utf8');
+            const limit = 60000; // stay under the comment size cap
+            if (plan.length > limit) plan = plan.slice(0, limit) + '\n… (truncated — full plan in the workflow artifact)';
+            const body = `### Terraform plan (\`infra/terraform\`)\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });

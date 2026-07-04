@@ -1,0 +1,41 @@
+{{- if .Values.ingress.enabled }}
+# Single public entry point: / → SPA, /api → backend service.
+# TLS by cert-manager via the ClusterIssuer annotation (NGINX ingress; AGIC was
+# the rejected WAF alternative — see docs/adr).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "frontend.name" . }}
+  labels:
+    {{- include "frontend.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.host }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+      secretName: {{ .Values.ingress.tlsSecretName }}
+  {{- end }}
+  rules:
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host }}
+      {{- end }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.api.path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.ingress.api.serviceName }}
+                port:
+                  number: {{ .Values.ingress.api.servicePort }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "frontend.name" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

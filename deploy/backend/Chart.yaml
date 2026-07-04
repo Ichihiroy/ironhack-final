@@ -1,0 +1,6 @@
+apiVersion: v2
+name: backend
+description: Spring Boot backend — swappable stub; the chart plumbing is the product
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

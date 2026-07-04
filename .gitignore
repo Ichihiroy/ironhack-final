@@ -1,0 +1,50 @@
+# ── Secrets & credentials — NEVER commit ─────────────────────────────
+*.tfvars
+!*.tfvars.example
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+azure-credentials*.json
+
+# ── Terraform ─────────────────────────────────────────────────────────
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan*
+crash.log
+crash.*.log
+.terraform.lock.hcl.backup
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# ── Java / Maven ──────────────────────────────────────────────────────
+apps/backend/target/
+*.class
+*.jar
+!apps/backend/.mvn/wrapper/maven-wrapper.jar
+
+# ── Node / Vite ───────────────────────────────────────────────────────
+node_modules/
+apps/frontend/dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# ── Helm ──────────────────────────────────────────────────────────────
+*.tgz
+deploy/**/charts/
+
+# ── IDE / OS noise ────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

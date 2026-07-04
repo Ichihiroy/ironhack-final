@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (gitignored) and fill in. NEVER commit terraform.tfvars.
+subscription_id = "00000000-0000-0000-0000-000000000000"
+
+team        = "thelocals" # team slug — keeps our resource names from colliding with other teams'
+project     = "ironhack"
+environment = "prod"
+location    = "westeurope"
+
+# sql_admin_login       = "sqladminuser"
+# system_node_vm_size   = "Standard_D2s_v5"
+# user_node_vm_size     = "Standard_D4s_v5"
+# user_node_max_count   = 6

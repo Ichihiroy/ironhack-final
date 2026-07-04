@@ -1,0 +1,71 @@
+# Swapping the product = bump image.tag (CI sets sha-<gitsha>). Nothing else moves.
+image:
+  repository: "" # <acr-login-server>/backend — set by CI (--set image.repository=...)
+  tag: "" # immutable sha-<gitsha> — set by CI
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+serviceAccount:
+  name: backend
+  # Workload identity: client id of the user-assigned identity (terraform output
+  # app_identity_client_id). Set by CI via --set.
+  azureClientId: ""
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  minAvailable: 2
+
+probes:
+  liveness:
+    path: /actuator/health/liveness
+  readiness:
+    path: /actuator/health/readiness
+  startup:
+    path: /actuator/health/liveness
+    failureThreshold: 30
+    periodSeconds: 5
+
+# Key Vault → CSI → synced K8s Secret (contract env var names)
+secretProviderClass:
+  enabled: true
+  keyVaultName: "" # terraform output key_vault_name — set by CI
+  tenantId: "" # AZURE_TENANT_ID — set by CI
+  syncedSecretName: backend-db
+  objects:
+    - kvSecretName: sql-datasource-url
+      envVarName: SPRING_DATASOURCE_URL
+    - kvSecretName: sql-datasource-username
+      envVarName: SPRING_DATASOURCE_USERNAME
+    - kvSecretName: sql-datasource-password
+      envVarName: SPRING_DATASOURCE_PASSWORD
+
+networkPolicy:
+  enabled: true
+  # namespaces allowed to reach the backend besides same-namespace frontend pods
+  ingressNamespace: ingress-nginx
+  monitoringNamespace: monitoring
+
+nodeSelector:
+  workload: apps
+
+topologySpread:
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: ScheduleAnyway

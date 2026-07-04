@@ -1,0 +1,24 @@
+{{- if .Values.networkPolicy.enabled }}
+# Frontend accepts traffic ONLY from the ingress controller. Its own egress to
+# the backend is allowed by the backend's policy; the default-deny baseline
+# lives in security/networkpolicies.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "frontend.name" . }}
+  labels:
+    {{- include "frontend.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "frontend.selectorLabels" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+{{- end }}

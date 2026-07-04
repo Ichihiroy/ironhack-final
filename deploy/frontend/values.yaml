@@ -1,0 +1,71 @@
+# Swapping the product = bump image.tag (CI sets sha-<gitsha>). Nothing else moves.
+image:
+  repository: "" # <acr-login-server>/frontend — set by CI
+  tag: "" # immutable sha-<gitsha> — set by CI
+  pullPolicy: IfNotPresent
+
+replicaCount: 3
+
+# Empty = same-origin: the browser calls /api on the shared ingress host,
+# which routes to the backend service. Written to env.js at container start.
+apiUrl: ""
+
+serviceAccount:
+  name: frontend
+  azureClientId: "" # frontend needs no Azure access; kept for symmetry, unset
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  minAvailable: 2
+
+probes:
+  path: /healthz
+
+ingress:
+  enabled: true
+  className: nginx
+  host: "" # set per environment by CI, e.g. app.example.com
+  tlsSecretName: frontend-tls
+  clusterIssuer: letsencrypt-prod # cert-manager (see docs/adr on NGINX vs AGIC)
+  # Public API path routed straight to the backend service — the only backend exposure
+  api:
+    path: /api
+    serviceName: backend
+    servicePort: 8080
+
+# SecretProviderClass wiring exists chart-side for symmetry with the backend but is
+# disabled: the frontend consumes no secrets (runtime env.js is configuration, not a secret).
+secretProviderClass:
+  enabled: false
+  keyVaultName: ""
+  tenantId: ""
+  syncedSecretName: frontend-kv
+  objects: []
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx
+
+nodeSelector:
+  workload: apps
+
+topologySpread:
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: ScheduleAnyway
