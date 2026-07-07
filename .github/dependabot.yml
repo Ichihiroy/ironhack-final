@@ -1,0 +1,42 @@
+# Supply-chain hygiene: weekly dependency update PRs for every ecosystem in the
+# repo. Each PR flows through the same CI gates (tests, Trivy, gitleaks) as any
+# other change — Dependabot proposes, the pipelines decide.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /apps/backend
+    schedule:
+      interval: weekly
+    groups:
+      maven-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /apps/frontend
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /apps/backend
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directory: /apps/frontend
+    schedule:
+      interval: weekly
+
+  # Keeps the SHA-pinned actions fresh: Dependabot understands `sha # vX`
+  # comments and bumps both together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: terraform
+    directory: /infra/terraform
+    schedule:
+      interval: weekly

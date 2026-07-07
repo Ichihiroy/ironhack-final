@@ -13,10 +13,10 @@ flowchart TB
     user((User))
 
     subgraph GitHub
-        repo[Monorepo]
+        repo[Monorepo<br/>charts + gitops/values]
         wf_fe[frontend-ci-cd]
         wf_be[backend-ci-cd]
-        wf_infra[infra plan / apply]
+        wf_infra[infra plan / apply / drift]
     end
 
     subgraph Azure["Azure — rg-thelocals-ironhack-prod"]
@@ -34,6 +34,8 @@ flowchart TB
                         csi[CSI secrets store]
                     end
                     prom[kube-prometheus-stack<br/>Prometheus · Grafana · Alertmanager]
+                    argo[Argo CD<br/>pull-based reconcile]
+                    kyv[Kyverno<br/>admission policies]
                 end
             end
             subgraph snet_data["snet-data"]
@@ -54,8 +56,11 @@ flowchart TB
     prom -->|scrape /actuator/prometheus| be
     aks --> law
 
-    wf_fe & wf_be -->|OIDC push sha-tag| acr
-    wf_fe & wf_be -->|helm upgrade| aks
+    wf_fe & wf_be -->|OIDC push sha-tag + cosign sign| acr
+    wf_fe & wf_be -->|commit image.tag bump| repo
+    argo -->|pull desired state| repo
+    argo -->|sync| ns
+    kyv -.->|verify signature + policies| ns
     wf_infra -->|terraform| Azure
     acr -->|AcrPull kubelet identity| aks
 ```
@@ -123,6 +128,23 @@ start, so **one image** promotes staging → production. Rejected: baking the UR
 at build time — would force environment-specific images and break the
 immutable-tag promotion model.
 
+### Pull-based GitOps with Argo CD ([ADR-0008](adr/0008-pull-based-gitops-argocd.md))
+CI never touches the cluster: promote jobs commit an `image.tag` bump to
+`gitops/values/` (production behind the reviewer gate), and Argo CD —
+installed by Terraform — reconciles git → cluster with `prune` + `selfHeal`.
+Git holds *what* runs; Terraform injects *where/who* (ACR, identities, Key
+Vault) into the Application specs so no GUID lands in git. Rollback =
+`git revert`. Rejected: keeping push-based helm (CI cluster credentials, no
+reconciliation, silent drift).
+
+### Cosign keyless signing + Kyverno admission ([ADR-0009](adr/0009-image-signing-admission-policies.md))
+Every pushed digest is signed keyless (GitHub OIDC → Fulcio/Rekor, zero keys);
+Kyverno verifies the signature at admission and enforces no-`:latest`,
+ACR-only registries, non-root, and resource limits in the app namespaces
+(`gitops/policies/`, synced by Argo CD). Rejected: key-based signing (key
+management contradicts the no-secrets design) and Gatekeeper (no native image
+verification).
+
 ## The swappable-app contract
 
 | Contract point | Value |
@@ -140,8 +162,9 @@ plumbing, workflows, dashboards, and alerts all stay untouched.
 ## Environments
 
 One cluster, two namespaces (`app-staging`, `app-production`) with identical
-charts and separate values. Every main-branch build deploys to staging
-automatically; production requires a human approval on the GitHub `production`
-environment. Namespace-per-env on one cluster is a deliberate cost/complexity
-trade-off for a capstone; the same pipelines pointed at a second cluster give
-hard isolation later.
+charts and separate values files under `gitops/values/`. Every main-branch
+build bumps the staging tag automatically; the production bump requires a
+human approval on the GitHub `production` environment. Argo CD reconciles both
+continuously (ADR-0008). Namespace-per-env on one cluster is a deliberate
+cost/complexity trade-off for a capstone; the same flow pointed at a second
+cluster gives hard isolation later.

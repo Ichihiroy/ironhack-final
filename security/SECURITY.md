@@ -7,8 +7,9 @@ Every control below is enforced by a file in this repo, not by convention.
 
 | Control | Where |
 | ------- | ----- |
-| GitHub Actions → Azure via **OIDC federation** only; no client secrets, no PATs | `infra/bootstrap/bootstrap.sh`, all 4 workflows |
+| GitHub Actions → Azure via **OIDC federation** only; no client secrets, no PATs | `infra/bootstrap/bootstrap.sh`, all workflows |
 | **RO/RW split**: PRs plan with Reader; apply on main uses Contributor + RBAC Administrator, and its federated credential only matches the reviewer-gated `production` environment | `infra/bootstrap/bootstrap.sh`, `docs/adr/0004` |
+| **CI holds no cluster credentials at all**: deploys are pull-based (Argo CD reconciles git); app-ci is AcrPush-only | `infra/terraform/gitops.tf`, `docs/adr/0008` |
 | Pods → Key Vault via **workload identity** (federated ServiceAccount, projected token exchange) | `infra/terraform/keyvault.tf`, `deploy/backend` |
 | ACR `admin_enabled = false`; nodes pull via kubelet identity AcrPull — no `imagePullSecrets` | `infra/terraform/acr.tf` |
 
@@ -44,10 +45,22 @@ Every control below is enforced by a file in this repo, not by convention.
   Trivy **misconfiguration scan gates every Terraform PR** (`infra-plan.yml`).
 - Deploys pin **immutable `sha-<gitsha>` tags**; the `:main` alias is never
   deployed (`docs/adr/0005`).
-- Image **signing** is not yet enabled; the documented next step is cosign
-  keyless signing in CI (OIDC fits it naturally) + an admission policy
-  verifying signatures at deploy time. Immutable digest-pinned tags plus the
-  scan gate cover provenance until then.
+- **Image signing**: every pushed digest is signed with **cosign keyless**
+  (GitHub OIDC → Fulcio certificate, Rekor transparency log — no keys to
+  leak); a Kyverno `verifyImages` policy checks the signature at admission
+  and pins the verified digest (`docs/adr/0009`,
+  `gitops/policies/verify-image-signature.yaml` — Audit until registry auth
+  for signature fetch is validated, then Enforce).
+- **Admission policies** (Kyverno, enforced in the app namespaces): no
+  `:latest`/untagged images, ACR-only registries, non-root, resource
+  requests+limits required (`gitops/policies/`).
+- **Secret scanning**: gitleaks over the full git history on every PR and
+  push (`.github/workflows/secret-scan.yml`).
+- **Dependency updates**: Dependabot watches Maven, npm, both Dockerfiles,
+  GitHub Actions, and Terraform providers weekly (`.github/dependabot.yml`).
+- **Pinned actions**: every workflow step is pinned to a full commit SHA
+  (tag-move attacks on third-party actions don't reach us); Dependabot keeps
+  the pins fresh.
 
 ## Runtime
 

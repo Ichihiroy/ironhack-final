@@ -20,6 +20,9 @@ env:
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PLATFORM_RO }}
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  # ingress hosts feed the Argo CD Application specs (gitops.tf)
+  TF_VAR_frontend_host_staging: ${{ vars.FRONTEND_HOST_STAGING }}
+  TF_VAR_frontend_host_production: ${{ vars.FRONTEND_HOST_PRODUCTION }}
 
 jobs:
   plan:
@@ -29,9 +32,9 @@ jobs:
       id-token: write # OIDC token for Azure
       pull-requests: write # plan summary comment
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "~1.9"
 
@@ -50,7 +53,7 @@ jobs:
         run: terraform -chdir=${{ env.TF_DIR }} validate
 
       - name: IaC policy scan (Trivy misconfiguration checks)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
         with:
           scan-type: config
           scan-ref: ${{ env.TF_DIR }}
@@ -65,7 +68,7 @@ jobs:
             -out=tfplan | tee plan.txt
 
       - name: Upload plan artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: tfplan-${{ github.event.pull_request.number }}
           path: |
@@ -74,7 +77,7 @@ jobs:
           retention-days: 14
 
       - name: Comment plan on PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         with:
           script: |
             const fs = require('fs');

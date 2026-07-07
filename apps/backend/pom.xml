@@ -15,7 +15,7 @@
   <artifactId>backend</artifactId>
   <version>0.1.0</version>
   <name>backend</name>
-  <description>Thin, swappable backend stub proving the AKS pipeline end to end</description>
+  <description>Overcast — cloud-bill waste scanner (deterministic rules engine + optional AI explanations)</description>
 
   <properties>
     <java.version>21</java.version>
@@ -35,6 +35,28 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <!-- Schema migrations (scan/finding tables) — vendor-specific SQL under
+         db/migration/{vendor} for Postgres (local) and Azure SQL (prod). -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-database-postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-sqlserver</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+    <!-- Redis cache for scan summaries/findings — the hot load-test read path.
+         The app degrades gracefully to DB reads if Redis is unreachable. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-data-redis</artifactId>
     </dependency>
     <dependency>
       <groupId>org.postgresql</groupId>

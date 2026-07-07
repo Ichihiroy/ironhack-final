@@ -11,6 +11,28 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/appdb}
     username: ${SPRING_DATASOURCE_USERNAME:app}
     password: ${SPRING_DATASOURCE_PASSWORD:localdev}
+  flyway:
+    # {vendor} resolves to postgresql (local/compose) or sqlserver (Azure SQL)
+    locations: classpath:db/migration/{vendor}
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 12MB
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+      connect-timeout: 2s
+
+overcast:
+  ai:
+    # All blank = deterministic fallback mode; the app is fully functional
+    # without a key. Values come from Key Vault-synced env vars in-cluster.
+    endpoint: ${AZURE_OPENAI_ENDPOINT:}
+    api-key: ${AZURE_OPENAI_API_KEY:}
+    deployment: ${AZURE_OPENAI_DEPLOYMENT:}
 
 management:
   endpoints:

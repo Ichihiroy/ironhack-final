@@ -9,9 +9,13 @@ has been run by someone with cluster access.
 Normal path — **never deploy by hand**:
 
 1. Merge a PR touching `apps/backend/**` or `apps/frontend/**` into `main`.
-2. The pipeline tests, builds, Trivy-scans, pushes `sha-<gitsha>`, deploys to
-   `app-staging`, then waits for approval on the `production` environment.
-3. Verify staging before approving:
+2. The pipeline tests, builds, Trivy-scans, pushes `sha-<gitsha>`, cosign-signs
+   the digest, commits the staging tag bump to `gitops/values/`, then waits for
+   approval on the `production` environment before committing the production
+   bump. Argo CD reconciles each bump into the cluster (ADR-0008) — CI itself
+   never touches AKS.
+3. Verify staging before approving (Argo CD UI shows sync/health too —
+   `kubectl -n argocd port-forward svc/argocd-server 8082:80`):
 
    ```bash
    kubectl -n app-staging rollout status deploy/backend
@@ -19,7 +23,8 @@ Normal path — **never deploy by hand**:
    curl -s http://localhost:8080/actuator/health/readiness   # {"status":"UP"}
    ```
 
-4. Approve the `production` deployment in the GitHub Actions run.
+4. Approve the `production` promotion in the GitHub Actions run; Argo CD syncs
+   `app-production` from the resulting commit.
 
 Infra path: PR touching `infra/**` → review the plan comment → merge → approve
 the gated apply.
@@ -39,36 +44,38 @@ To detect it:
    - Revert: merge an empty-change PR and let the gated apply reconcile
      reality back to code.
 
-To automate this, add a `schedule:` trigger to `infra-plan.yml` that fails on a
-non-empty plan (`terraform plan -detailed-exitcode`). Note this needs one extra
-federated credential on platform-ro for the scheduled context
-(`repo:<org>/<repo>:ref:refs/heads/main`), since its current trust only matches
-`pull_request` — a deliberate least-privilege default.
+This is automated: `.github/workflows/infra-drift.yml` runs
+`terraform plan -detailed-exitcode` nightly (06:00 UTC) with the read-only
+platform identity, opens/refreshes a GitHub issue labeled `drift` when live
+state diverges, and fails the run so it shows red. bootstrap.sh grants
+platform-ro the extra `ref:refs/heads/main` federated credential the scheduled
+context needs. The manual PR route above still works for on-demand checks
+(or run the workflow via `workflow_dispatch`).
+
+**App-layer drift** needs no detection at all: Argo CD `selfHeal` reverts any
+manual change to the app namespaces within seconds — git is the only write
+path (ADR-0008).
 
 ## Rollback
 
-**Automatic**: every CI deploy runs `helm upgrade --atomic` — if pods fail
-their probes within the timeout, Helm rolls the release back to the previous
-revision on its own and the job fails loudly. A bad image never lingers.
+**Safety net**: rollouts are RollingUpdate behind readiness probes — pods that
+fail probes never take traffic, and Argo CD marks the Application `Degraded`
+so the failure is loud (Argo UI / `kubectl -n argocd get applications`).
 
-**Manual** — Helm keeps release history per namespace:
-
-```bash
-helm -n app-production history backend
-helm -n app-production rollback backend <previous-revision> --wait
-```
-
-Equivalent (and what the history entry contains): redeploy the previous
-immutable tag:
+**Rollback = git revert** (no cluster access needed):
 
 ```bash
-helm -n app-production upgrade backend deploy/backend --reuse-values \
-  --set image.tag=sha-<previous-gitsha> --wait
+git log --oneline -- gitops/values/           # deploy history
+git revert <bad-tag-bump-commit> && git push  # Argo CD converges within ~3min
 ```
 
-Because tags are immutable (ADR-0005), the rolled-back pods are bit-for-bit the
-previously scanned image. Infra rollback: `git revert` the infra commit → PR →
-plan → gated apply.
+Or edit `gitops/values/<app>-production.yaml` back to the previous
+`sha-<gitsha>` and push. Because tags are immutable (ADR-0005), the
+rolled-back pods are bit-for-bit the previously scanned and signed image.
+Emergency-only alternative: press "History and rollback" in the Argo CD UI —
+then still make git match, or `selfHeal` will re-apply the bad version.
+
+Infra rollback: `git revert` the infra commit → PR → plan → gated apply.
 
 ## Secret rotation (DB credentials)
 

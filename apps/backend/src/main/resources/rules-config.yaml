@@ -1,0 +1,86 @@
+# ============================================================================
+# Overcast rules engine — THE single auditable source of every constant that
+# touches the savings number. The dollar figure is deterministic: predicates
+# and formulas are implemented in RulesEngine.java 1:1 against the specs
+# below (the engine refuses to start on any mismatch), and the AI is never
+# in this path — it only phrases explanations after the math is done.
+#
+# 'predicate' and 'saving' fields are the human-readable spec of the code.
+# ============================================================================
+constants:
+  prev_gen_delta: 0.20      # right-sizing a previous-gen VM to current gen saves ~20%
+  offhours_factor: 0.65     # nonprod running 24/7 vs business hours + weekends off
+  ri_discount: 0.30         # 1y reserved instance vs pay-as-you-go, conservative
+  premium_delta: 0.40       # Premium SSD vs Standard SSD price gap
+  snapshot_age_days: 90     # older than this with no lifecycle policy = forgotten
+  sustained_hours: 700      # ≥700h of 730h month = effectively always-on
+  nonprod_rg_pattern: "(?i).*(dev|test|sandbox|qa).*"
+  required_tags: [owner, env]
+  prev_gen_skus:
+    - Standard_A2
+    - Standard_A4
+    - Standard_D2_v2
+    - Standard_D3_v2
+    - Standard_D4_v2
+    - Standard_DS2_v2
+    - Standard_DS3_v2
+    - Standard_DS4_v2
+    - Standard_F4
+    - Standard_F8
+
+rules:
+  - id: unattached_disk
+    name: Unattached managed disk
+    category: forgotten
+    predicate: "resource is a managed disk AND its association column is present but empty"
+    saving: "monthly_cost × 1.0 (the disk bills in full while attached to nothing)"
+    remediation: "Snapshot then delete unattached disk '{resource}' in {rg} — it serves no workload."
+
+  - id: orphaned_public_ip
+    name: Orphaned public IP
+    category: forgotten
+    predicate: "resource is a public IP AND its association column is present but empty"
+    saving: "monthly_cost × 1.0"
+    remediation: "Release public IP '{resource}' in {rg} — it is not associated with any NIC or load balancer."
+
+  - id: old_snapshot
+    name: Stale snapshot
+    category: forgotten
+    predicate: "resource is a snapshot AND age_days > snapshot_age_days"
+    saving: "monthly_cost × 1.0"
+    remediation: "Delete or tier snapshot '{resource}' ({age} days old) to archive storage; add a lifecycle policy."
+
+  - id: prev_gen_vm
+    name: Previous-generation VM SKU
+    category: oversized
+    predicate: "resource is a VM AND sku ∈ prev_gen_skus"
+    saving: "monthly_cost × prev_gen_delta"
+    remediation: "Resize '{resource}' from {sku} to the current-generation equivalent (same vCPU/RAM, ~20% cheaper)."
+
+  - id: nonprod_247
+    name: Non-prod running 24/7
+    category: idle
+    predicate: "resource is a VM AND resource_group matches nonprod_rg_pattern AND usage hours ≥ sustained_hours"
+    saving: "monthly_cost × offhours_factor"
+    remediation: "Add an auto-shutdown schedule to '{resource}' in {rg} (nights + weekends off)."
+
+  - id: ondemand_vs_reserved
+    name: Sustained on-demand compute
+    category: oversized
+    predicate: "resource is a VM AND usage hours ≥ sustained_hours AND resource_group is NOT nonprod (steady prod load is the reservation candidate; nonprod is handled by nonprod_247)"
+    saving: "monthly_cost × ri_discount"
+    remediation: "Buy a 1-year reserved instance for '{resource}' — it ran the entire month on-demand."
+
+  - id: premium_storage_nonprod
+    name: Premium storage in non-prod
+    category: oversized
+    predicate: "resource is an ATTACHED premium disk AND resource_group matches nonprod_rg_pattern (unattached disks are already claimed in full by unattached_disk)"
+    saving: "monthly_cost × premium_delta"
+    remediation: "Downgrade '{resource}' in {rg} from Premium to Standard SSD — non-prod rarely needs the IOPS."
+
+  - id: untagged
+    name: Missing governance tags
+    category: forgotten
+    predicate: "resource is missing any of required_tags"
+    saving: "0 (governance flag only — never counted as dollar waste)"
+    remediation: "Tag '{resource}' with owner and env so the bill has an accountable owner."

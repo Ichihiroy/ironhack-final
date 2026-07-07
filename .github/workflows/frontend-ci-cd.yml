@@ -27,8 +27,8 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: npm
@@ -43,20 +43,20 @@ jobs:
         working-directory: ${{ env.CONTEXT }}
         run: npm run build
 
-  # ── Stage 2: image build → Trivy gate → (main only) push to ACR ──
+  # ── Stage 2: image build → Trivy gate → (main only) push to ACR + cosign sign ──
   image:
     runs-on: ubuntu-latest
     needs: build
     permissions:
       contents: read
-      id-token: write # only exercised on main (ACR push via OIDC)
+      id-token: write # only exercised on main (ACR push + cosign keyless, both via OIDC)
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build image (load only, no push)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ env.CONTEXT }}
           load: true
@@ -64,7 +64,7 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:candidate
 
       - name: Trivy scan (gate on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.29.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0 # v0.29.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:candidate
           format: table
@@ -74,7 +74,7 @@ jobs:
 
       - name: Azure login (OIDC, app-ci identity)
         if: github.event_name == 'push'
-        uses: azure/login@v2
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID_APP }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -91,57 +91,95 @@ jobs:
         env:
           ACR: ${{ vars.ACR_LOGIN_SERVER }}
 
-  # ── Stage 3: staging deploy (main only) ──
-  deploy-staging:
+      - name: Install cosign
+        if: github.event_name == 'push'
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+
+      - name: Sign image (cosign keyless — GitHub OIDC, no keys anywhere)
+        if: github.event_name == 'push'
+        run: |
+          # Sign the immutable digest, not the tag: the signature stays valid
+          # even if a tag were ever moved. Kyverno verifies this signature at
+          # admission (gitops/policies/verify-image-signature.yaml).
+          DIGEST=$(az acr repository show \
+            --name "${ACR%%.*}" \
+            --image "$IMAGE_NAME:sha-${GITHUB_SHA::7}" \
+            --query digest -o tsv)
+          cosign sign --yes "$ACR/$IMAGE_NAME@$DIGEST"
+        env:
+          ACR: ${{ vars.ACR_LOGIN_SERVER }}
+
+  # ── Stage 3: GitOps promote to staging (main only) ──
+  # No kubectl/helm from CI anymore: CI's only deploy power is a git commit bumping
+  # the staging image tag; Argo CD in-cluster reconciles it (ADR-0008).
+  promote-staging:
     runs-on: ubuntu-latest
     needs: image
     if: github.event_name == 'push'
     environment: staging
     permissions:
-      contents: read
-      id-token: write
+      contents: write # commit the tag bump to gitops/values/
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID_APP }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Helm deploy → app-staging
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Bump staging image tag in gitops values
         run: |
-          az aks get-credentials \
-            --resource-group "${{ vars.APP_RESOURCE_GROUP }}" \
-            --name "${{ vars.AKS_NAME }}" --overwrite-existing
-          helm upgrade --install frontend deploy/frontend \
-            --namespace app-staging --create-namespace \
-            --set image.repository="${{ vars.ACR_LOGIN_SERVER }}/frontend" \
-            --set image.tag="sha-${GITHUB_SHA::7}" \
-            --set ingress.host="${{ vars.FRONTEND_HOST_STAGING }}" \
-            --atomic --timeout 5m
+          TAG="sha-${GITHUB_SHA::7}"
+          FILE="gitops/values/${IMAGE_NAME}-staging.yaml"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          success=0
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B main origin/main
+            yq -i ".image.tag = \"${TAG}\"" "$FILE"
+            if git diff --quiet; then
+              echo "staging already at ${TAG}"
+              success=1
+              break
+            fi
+            git add "$FILE"
+            git commit -m "gitops(${IMAGE_NAME}): staging → ${TAG}"
+            if git push origin main; then
+              success=1
+              break
+            fi
+            echo "push rejected (concurrent promote) — retry ${attempt}"
+            sleep $((attempt * 3))
+          done
+          [ "$success" = "1" ]
 
-  # ── Stage 4: production deploy (gated by required reviewer) ──
-  deploy-production:
+  # ── Stage 4: GitOps promote to production (gated by required reviewer) ──
+  promote-production:
     runs-on: ubuntu-latest
-    needs: deploy-staging
+    needs: promote-staging
     environment: production
     permissions:
-      contents: read
-      id-token: write
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID_APP }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      - name: Helm deploy → app-production
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Bump production image tag in gitops values
         run: |
-          az aks get-credentials \
-            --resource-group "${{ vars.APP_RESOURCE_GROUP }}" \
-            --name "${{ vars.AKS_NAME }}" --overwrite-existing
-          helm upgrade --install frontend deploy/frontend \
-            --namespace app-production --create-namespace \
-            --set image.repository="${{ vars.ACR_LOGIN_SERVER }}/frontend" \
-            --set image.tag="sha-${GITHUB_SHA::7}" \
-            --set ingress.host="${{ vars.FRONTEND_HOST_PRODUCTION }}" \
-            --atomic --timeout 5m
+          TAG="sha-${GITHUB_SHA::7}"
+          FILE="gitops/values/${IMAGE_NAME}-production.yaml"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          success=0
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B main origin/main
+            yq -i ".image.tag = \"${TAG}\"" "$FILE"
+            if git diff --quiet; then
+              echo "production already at ${TAG}"
+              success=1
+              break
+            fi
+            git add "$FILE"
+            git commit -m "gitops(${IMAGE_NAME}): production → ${TAG}"
+            if git push origin main; then
+              success=1
+              break
+            fi
+            echo "push rejected (concurrent promote) — retry ${attempt}"
+            sleep $((attempt * 3))
+          done
+          [ "$success" = "1" ]

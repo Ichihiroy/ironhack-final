@@ -27,13 +27,13 @@ names (storage account, and later ACR/Key Vault/SQL from Terraform) collide.
 | `rg-<team>-<project>-<env>`             | App RG — the RBAC scope for all CI roles       |
 | `<prefix>-gh-platform-ro`         | OIDC identity: `terraform plan` on PRs (Reader)|
 | `<prefix>-gh-platform-rw`         | OIDC identity: `terraform apply` on main (Contributor + RBAC Administrator, gated by the `production` environment) |
-| `<prefix>-gh-app-ci`              | OIDC identity: ACR push + Helm deploy (AcrPush + AKS Cluster User) |
+| `<prefix>-gh-app-ci`              | OIDC identity: ACR push + cosign sign (AcrPush only — deploys are pull-based via Argo CD, ADR-0008) |
 
 Each identity is federated to this GitHub repo with subject claims matching how
-the workflows run: `pull_request` for RO, `environment:production` for RW,
-`ref:refs/heads/main` + `environment:staging|production` for app CI. No client
-secrets exist anywhere — GitHub presents a short-lived OIDC token and Azure
-exchanges it.
+the workflows run: `pull_request` + `ref:refs/heads/main` (nightly drift check)
+for RO, `environment:production` for RW, `ref:refs/heads/main` for app CI. No
+client secrets exist anywhere — GitHub presents a short-lived OIDC token and
+Azure exchanges it.
 
 ### Remote state & locking
 
@@ -73,5 +73,6 @@ variable. The script is idempotent — safe to re-run.
 3. Open a PR touching `infra/**` → `infra-plan.yml` runs as platform-ro.
 4. Merge → `infra-apply.yml` waits for the production-environment approval,
    then applies as platform-rw.
-5. Set the post-apply variables (`ACR_LOGIN_SERVER`, `AKS_NAME`,
-   `APP_IDENTITY_CLIENT_ID`, `KEY_VAULT_NAME`) from `terraform output`.
+5. Set the post-apply variable `ACR_LOGIN_SERVER` from `terraform output`
+   (the only output CI still needs — Terraform wires the rest straight into
+   the Argo CD Application specs, see `infra/terraform/gitops.tf`).

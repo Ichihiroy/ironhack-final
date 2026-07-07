@@ -115,6 +115,31 @@ variable "app_staging_namespace" {
   default     = "app-staging"
 }
 
+# ── GitOps (Argo CD) ──────────────────────────────────────────────────
+variable "gitops_repo_url" {
+  description = "Git repo Argo CD watches (charts under deploy/, desired state under gitops/). Public repo — no credentials needed."
+  type        = string
+  default     = "https://github.com/Ichihiroy/ironhack-final.git"
+}
+
+variable "gitops_revision" {
+  description = "Git revision Argo CD tracks."
+  type        = string
+  default     = "main"
+}
+
+variable "frontend_host_staging" {
+  description = "Ingress host for the staging frontend (injected into the Argo CD Application; CI sets it via TF_VAR from the FRONTEND_HOST_STAGING repo variable)."
+  type        = string
+  default     = ""
+}
+
+variable "frontend_host_production" {
+  description = "Ingress host for the production frontend (injected into the Argo CD Application; CI sets it via TF_VAR from the FRONTEND_HOST_PRODUCTION repo variable)."
+  type        = string
+  default     = ""
+}
+
 # ── Azure SQL ─────────────────────────────────────────────────────────
 variable "sql_admin_login" {
   description = "Azure SQL administrator login name (password is generated and stored in Key Vault)."

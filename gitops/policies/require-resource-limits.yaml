@@ -1,0 +1,31 @@
+# Every container must declare CPU/memory requests and limits — the HPA and
+# the autoscaled user node pool both depend on requests being present, and
+# limits keep a runaway pod from starving its node.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-resource-limits
+  annotations:
+    policies.kyverno.io/title: Require resource requests and limits
+spec:
+  background: true
+  rules:
+    - name: requests-and-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app-staging, app-production]
+      validate:
+        failureAction: Enforce
+        message: "CPU and memory requests and limits are required on every container."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
+                  limits:
+                    cpu: "?*"
+                    memory: "?*"

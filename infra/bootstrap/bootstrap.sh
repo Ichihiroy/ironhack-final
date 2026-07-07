@@ -11,9 +11,12 @@
 #   2. The application resource group (RBAC scope anchor — see docs/adr/0006)
 #   3. Three Entra app registrations, federated to GitHub Actions (OIDC, no
 #      secrets anywhere):
-#        app-ci       → AcrPush + AKS Cluster User on the app RG   (image push + helm deploy)
-#        platform-ro  → Reader on the app RG                       (terraform plan on PRs)
+#        app-ci       → AcrPush on the app RG                      (image push + cosign sign)
+#        platform-ro  → Reader on the app RG                       (terraform plan on PRs + nightly drift check)
 #        platform-rw  → Contributor + RBAC Administrator on the app RG (terraform apply on main)
+#
+#      Deploys are pull-based (Argo CD, ADR-0008): CI never talks to AKS, so
+#      app-ci needs no cluster role at all.
 #
 # Usage:
 #   SUBSCRIPTION_ID=... GITHUB_REPO=org/repo ./bootstrap.sh
@@ -100,9 +103,11 @@ assign_role() {
 
 echo "==> [3/4] CI identities + GitHub OIDC federation (repo: ${GITHUB_REPO})"
 
-echo "  -> platform-ro (terraform plan on pull requests)"
+echo "  -> platform-ro (terraform plan on pull requests + scheduled drift detection)"
 RO_APP_ID=$(create_identity "${PREFIX}-gh-platform-ro")
 add_fed_cred "$RO_APP_ID" "pull-request" "repo:${GITHUB_REPO}:pull_request"
+# scheduled runs (infra-drift.yml) present the branch subject, not pull_request
+add_fed_cred "$RO_APP_ID" "branch-main" "repo:${GITHUB_REPO}:ref:refs/heads/main"
 assign_role "$RO_APP_ID" "Reader" "$APP_RG_ID"
 # plan reads (and locks) remote state
 assign_role "$RO_APP_ID" "Storage Blob Data Contributor" "$TFSTATE_SA_ID"
@@ -116,13 +121,12 @@ assign_role "$RW_APP_ID" "Contributor" "$APP_RG_ID"
 assign_role "$RW_APP_ID" "Role Based Access Control Administrator" "$APP_RG_ID"
 assign_role "$RW_APP_ID" "Storage Blob Data Contributor" "$TFSTATE_SA_ID"
 
-echo "  -> app-ci (image push + helm deploy from the app pipelines)"
+echo "  -> app-ci (image push + cosign sign from the app pipelines)"
 APPCI_APP_ID=$(create_identity "${PREFIX}-gh-app-ci")
 add_fed_cred "$APPCI_APP_ID" "branch-main" "repo:${GITHUB_REPO}:ref:refs/heads/main"
-add_fed_cred "$APPCI_APP_ID" "env-staging" "repo:${GITHUB_REPO}:environment:staging"
-add_fed_cred "$APPCI_APP_ID" "env-production" "repo:${GITHUB_REPO}:environment:production"
+# AcrPush only: deploys are pull-based via Argo CD (ADR-0008), so this identity
+# never needs AKS access — the promote jobs just commit a tag bump to git.
 assign_role "$APPCI_APP_ID" "AcrPush" "$APP_RG_ID"
-assign_role "$APPCI_APP_ID" "Azure Kubernetes Service Cluster User Role" "$APP_RG_ID"
 
 echo "==> [4/4] Done. Configure these as GitHub repository VARIABLES (Settings → Secrets and variables → Actions → Variables):"
 cat <<EOF
@@ -140,9 +144,10 @@ cat <<EOF
 After the first successful infra-apply, also set (from terraform outputs):
 
   ACR_LOGIN_SERVER                <terraform output acr_login_server>
-  AKS_NAME                        <terraform output aks_name>
-  APP_IDENTITY_CLIENT_ID          <terraform output app_identity_client_id>
-  KEY_VAULT_NAME                  <terraform output key_vault_name>
+
+(That is the only output CI still needs: deploys are pull-based via Argo CD,
+and Terraform injects cluster/Key Vault identifiers directly into the Argo CD
+Application specs — see ADR-0008.)
 
 These are identifiers, not credentials — OIDC federation means no secret ever
 leaves Azure. Remember to create the 'staging' and 'production' GitHub

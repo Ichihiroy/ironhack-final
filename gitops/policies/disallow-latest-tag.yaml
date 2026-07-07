@@ -1,0 +1,38 @@
+# Immutable tags only (ADR-0005): every image must carry an explicit tag and
+# it must not be :latest. Deploys pin sha-<gitsha>; the :main alias exists in
+# ACR for humans but is never admitted here.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow :latest and untagged images
+spec:
+  background: true
+  rules:
+    - name: require-image-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app-staging, app-production]
+      validate:
+        failureAction: Enforce
+        message: "An explicit image tag is required (deploys pin immutable sha-<gitsha> tags)."
+        pattern:
+          spec:
+            containers:
+              - image: "*:*"
+    - name: disallow-latest
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app-staging, app-production]
+      validate:
+        failureAction: Enforce
+        message: "The :latest tag is mutable and is not allowed (ADR-0005)."
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"

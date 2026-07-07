@@ -1,0 +1,5 @@
+# Desired state for backend in app-production — reconciled by Argo CD (ADR-0008).
+# image.tag is written by CI's promote-production job, which sits behind the
+# reviewer-gated 'production' GitHub environment. Rollback = git revert.
+image:
+  tag: "" # sha-<gitsha>, written by CI after reviewer approval; empty until the first pipeline run

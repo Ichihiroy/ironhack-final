@@ -20,6 +20,9 @@ env:
   ARM_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID_PLATFORM_RW }}
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  # ingress hosts feed the Argo CD Application specs (gitops.tf)
+  TF_VAR_frontend_host_staging: ${{ vars.FRONTEND_HOST_STAGING }}
+  TF_VAR_frontend_host_production: ${{ vars.FRONTEND_HOST_PRODUCTION }}
 
 jobs:
   apply:
@@ -32,9 +35,9 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: "~1.9"
 

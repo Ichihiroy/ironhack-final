@@ -14,11 +14,12 @@ the deliverable is the platform (see
 apps/        frontend (React+Vite+TS → unprivileged nginx)  ·  backend (Spring Boot 3 / Java 21)
 infra/       bootstrap (Phase 0, run-once)  ·  terraform (AKS, ACR, KV, SQL, VNet, Log Analytics)
 deploy/      Helm charts: probes, HPA, PDB, spread, NetworkPolicy, SecretProviderClass
+gitops/      Argo CD desired state: per-env image tags (written by CI) + Kyverno policies
 observability/  kube-prometheus-stack values, ServiceMonitor, alerts, Grafana dashboards
 security/    default-deny NetworkPolicies, RBAC, CSI reference, SECURITY.md
 load-test/   k6 — 350 req/s sustained, p95 ≤ 300ms, trips the HPA on camera
-.github/     infra-plan · infra-apply · frontend-ci-cd · backend-ci-cd (all OIDC, no secrets)
-docs/        architecture (mermaid + why), runbook, 7 ADRs
+.github/     infra-plan · infra-apply · infra-drift · frontend/backend-ci-cd · secret-scan · dependabot (all OIDC, no secrets)
+docs/        architecture (mermaid + why), runbook, 9 ADRs
 ```
 
 ## How this repo operates: Phase 0, then pull requests forever
@@ -33,8 +34,10 @@ docs/        architecture (mermaid + why), runbook, 7 ADRs
      merge → `infra-apply` waits for approval on the `production` environment
      → applies.
    - `apps/backend/**` or `apps/frontend/**` PR → tests + build + Trivy gate →
-     merge → image pushed as immutable `sha-<gitsha>` → auto-deploy to
-     `app-staging` → approval → `app-production`.
+     merge → image pushed as immutable `sha-<gitsha>` + **cosign-signed** →
+     CI commits the staging tag bump to `gitops/values/` → approval → the
+     production bump. **Argo CD** (in-cluster) reconciles each bump — CI never
+     touches AKS ([ADR-0008](docs/adr/0008-pull-based-gitops-argocd.md)).
 
 ## Exact setup steps
 
@@ -52,8 +55,9 @@ SUBSCRIPTION_ID=<sub-id> GITHUB_REPO=<org>/<repo> ./bootstrap.sh
 # 3. Provision infra: open a PR touching infra/ (even a whitespace commit),
 #    review the plan comment, merge, approve the gated apply.
 
-# 4. Post-apply repo variables (once): ACR_LOGIN_SERVER, AKS_NAME,
-#    APP_IDENTITY_CLIENT_ID, KEY_VAULT_NAME  (values: terraform output)
+# 4. Post-apply repo variable (once): ACR_LOGIN_SERVER (value: terraform output)
+#    Argo CD + Kyverno were installed by the same apply; cluster identifiers
+#    are wired into the Argo Application specs by Terraform, not repo vars.
 
 # 5. In-cluster platform (once): ingress-nginx, cert-manager, monitoring, policies
 az aks get-credentials -g rg-thelocals-ironhack-prod -n aks-thelocals-ironhack-prod
@@ -93,12 +97,13 @@ Details: [load-test/README.md](load-test/README.md).
 
 | Rubric line | Where it is satisfied |
 | ----------- | --------------------- |
-| **Architecture** — design & justification | [docs/architecture.md](docs/architecture.md) (mermaid + every decision with the rejected alternative), [docs/adr/](docs/adr/) 0001–0007 |
+| **Architecture** — design & justification | [docs/architecture.md](docs/architecture.md) (mermaid + every decision with the rejected alternative), [docs/adr/](docs/adr/) 0001–0009 |
 | **Infra automation** — IaC, no clicks | [infra/terraform/](infra/terraform/) (AKS system+user autoscaled pools, ACR, Key Vault, Azure SQL + private endpoint, VNet, Log Analytics, workload identity), [infra/bootstrap/](infra/bootstrap/) for the documented run-once Phase 0 |
-| **Infra CI/CD** — plan on PR, gated apply, policy checks | [.github/workflows/infra-plan.yml](.github/workflows/infra-plan.yml) (fmt, validate, Trivy IaC policy scan, plan-as-PR-comment), [.github/workflows/infra-apply.yml](.github/workflows/infra-apply.yml) (OIDC RO/RW split, `production` reviewer gate); state locking in [infra/bootstrap/README.md](infra/bootstrap/README.md), drift detection in [docs/runbook.md](docs/runbook.md#infra-drift-detection) |
-| **App CI/CD** — two independent path-filtered pipelines | [.github/workflows/backend-ci-cd.yml](.github/workflows/backend-ci-cd.yml), [.github/workflows/frontend-ci-cd.yml](.github/workflows/frontend-ci-cd.yml) (test → build → Trivy gate → sha-tag push → staging → gated production; `helm --atomic` auto-rollback on failed health) |
+| **Infra CI/CD** — plan on PR, gated apply, policy checks | [.github/workflows/infra-plan.yml](.github/workflows/infra-plan.yml) (fmt, validate, Trivy IaC policy scan, plan-as-PR-comment), [.github/workflows/infra-apply.yml](.github/workflows/infra-apply.yml) (OIDC RO/RW split, `production` reviewer gate); state locking in [infra/bootstrap/README.md](infra/bootstrap/README.md), automated nightly drift detection in [.github/workflows/infra-drift.yml](.github/workflows/infra-drift.yml) + [docs/runbook.md](docs/runbook.md#infra-drift-detection) |
+| **App CI/CD** — two independent path-filtered pipelines | [.github/workflows/backend-ci-cd.yml](.github/workflows/backend-ci-cd.yml), [.github/workflows/frontend-ci-cd.yml](.github/workflows/frontend-ci-cd.yml) (test → build → Trivy gate → sha-tag push + cosign sign → GitOps promote to staging → gated production promote) |
+| **GitOps** — pull-based deploys, git as source of truth | [gitops/](gitops/), Argo CD installed by [infra/terraform/gitops.tf](infra/terraform/gitops.tf), [docs/adr/0008](docs/adr/0008-pull-based-gitops-argocd.md) (self-heal, prune, `git revert` rollback) |
 | **Kubernetes quality** — probes, HPA, PDB, spread, resources | [deploy/backend/](deploy/backend/), [deploy/frontend/](deploy/frontend/) (helm lint + template clean) |
-| **Security** — secrets, identity, network, supply chain | [security/SECURITY.md](security/SECURITY.md) (index of all controls), [security/networkpolicies.yaml](security/networkpolicies.yaml), [security/rbac.yaml](security/rbac.yaml), Key Vault CSI in [deploy/backend/templates/secretproviderclass.yaml](deploy/backend/templates/secretproviderclass.yaml), Trivy gates in both app workflows |
+| **Security** — secrets, identity, network, supply chain | [security/SECURITY.md](security/SECURITY.md) (index of all controls), [security/networkpolicies.yaml](security/networkpolicies.yaml), [security/rbac.yaml](security/rbac.yaml), Key Vault CSI in [deploy/backend/templates/secretproviderclass.yaml](deploy/backend/templates/secretproviderclass.yaml), Trivy gates in both app workflows, cosign signing + Kyverno admission policies ([docs/adr/0009](docs/adr/0009-image-signing-admission-policies.md), [gitops/policies/](gitops/policies/)), gitleaks secret scan ([.github/workflows/secret-scan.yml](.github/workflows/secret-scan.yml)), Dependabot + SHA-pinned actions ([.github/dependabot.yml](.github/dependabot.yml)) |
 | **Observability** — metrics, dashboards, alerts | [observability/](observability/) (kube-prometheus-stack values, ServiceMonitor → `/actuator/prometheus`, 2 Grafana dashboards, 4 Alertmanager rules), responses in [docs/runbook.md](docs/runbook.md) |
 | **Scalability** — HPA + cluster autoscaler, proven | HPAs in both charts, autoscaled node pools in [infra/terraform/aks.tf](infra/terraform/aks.tf), demo in [load-test/](load-test/) |
 | **Operations** — deploy, rollback, rotation, incidents | [docs/runbook.md](docs/runbook.md) |

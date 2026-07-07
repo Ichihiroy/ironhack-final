@@ -1,0 +1,24 @@
+# Only images from our ACR run in the app namespaces. Docker Hub, GHCR or any
+# other registry — including a typo-squatted one — is rejected at admission.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-registries
+  annotations:
+    policies.kyverno.io/title: Restrict image registries to ACR
+spec:
+  background: true
+  rules:
+    - name: acr-only
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app-staging, app-production]
+      validate:
+        failureAction: Enforce
+        message: "App images must come from the team ACR (*.azurecr.io)."
+        pattern:
+          spec:
+            containers:
+              - image: "*.azurecr.io/*"

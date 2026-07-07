@@ -24,9 +24,11 @@ git push -u origin main
   - Create `production` and add a **required reviewer** — a teammate, since you
     may not be able to approve your own deploys. This gate is what the whole
     RW-identity security model depends on (see `docs/adr/0004`).
-- **Branch protection** on `main` (Settings → Branches): require pull requests
-  and passing status checks. The rubric explicitly grades "push to main
-  (protected)".
+- **Branch protection** on `main` (Settings → Rules → Rulesets): require pull
+  requests and passing status checks. The rubric explicitly grades "push to
+  main (protected)". **Important**: add the `github-actions` app as a bypass
+  actor on the ruleset — the GitOps promote jobs (ADR-0008) commit image-tag
+  bumps to `gitops/values/` on main and will fail without it.
 
 ## 3. Phase 0 bootstrap (once, by a teammate with subscription Owner)
 
@@ -49,10 +51,12 @@ SUBSCRIPTION_ID=<sub-id> GITHUB_REPO=<org>/<repo> ./bootstrap.sh
 2. Confirm on the PR: the Terraform **plan appears as a comment** and the
    **Trivy IaC policy scan** passes.
 3. Merge → in the Actions run, **approve** the `production`-gated apply.
-   First apply takes ~15–20 min (AKS + SQL are slow).
+   First apply takes ~15–20 min (AKS + SQL are slow). The same apply installs
+   **Argo CD** and **Kyverno** into the cluster and registers the app
+   `Application` specs (`infra/terraform/gitops.tf`) — no manual GitOps setup.
 4. From the apply job's `terraform output` (or a local `terraform output`
-   against remote state), set the last 4 repo variables:
-   `ACR_LOGIN_SERVER`, `AKS_NAME`, `APP_IDENTITY_CLIENT_ID`, `KEY_VAULT_NAME`.
+   against remote state), set the last repo variable: `ACR_LOGIN_SERVER`.
+   (Cluster identifiers are injected into Argo CD by Terraform — ADR-0008.)
 
 ## 5. Install the in-cluster platform (once, manual)
 
@@ -80,13 +84,27 @@ kubectl apply -f security/networkpolicies.yaml
 ```
 
 Set the repo variables `FRONTEND_HOST_STAGING` / `FRONTEND_HOST_PRODUCTION`
-once DNS exists (the ingress renders host-less until then).
+once DNS exists (the ingress renders host-less until then). They flow into the
+Argo CD Application specs as `TF_VAR`s, so run one more infra PR → gated apply
+for the hosts to take effect.
 
 ## 6. Ship the apps
 
 Push (or PR + merge) any change under `apps/backend/**` and
 `apps/frontend/**`. Pipeline per app: test → image build → Trivy gate →
-push `sha-<gitsha>` → deploy `app-staging` → **approve** → `app-production`.
+push `sha-<gitsha>` + cosign sign → commit staging tag bump to
+`gitops/values/` → **approve** → production tag bump. Argo CD picks each bump
+up and syncs the cluster (within ~3 min, or press Refresh in its UI).
+
+Until this first run, the Argo CD apps show a helm error ("image.tag is
+required") — expected: git doesn't know a deployable image yet.
+
+Watch Argo CD reconcile (optional but demo-worthy):
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8082:80 &
+# login: admin / $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
+```
 
 Verify staging before approving production (from `docs/runbook.md`):
 
@@ -127,6 +145,13 @@ react and ~5 more to scale back down; know the timing.
   `environment:` block). Subjects are listed in `infra/bootstrap/bootstrap.sh`.
 - **First infra PR fails at init** → repo variables from step 3 missing or
   misnamed.
+- **Promote job can't push to main** → the branch-protection ruleset is
+  missing the `github-actions` bypass actor (step 2).
+- **Kyverno signature policy**: ships in **Audit** mode. After the first
+  deploy, check `kubectl get policyreports -n app-staging` — once reports show
+  the signature passing, flip `failureAction: Audit` → `Enforce` in
+  `gitops/policies/verify-image-signature.yaml` (see ADR-0009 for the
+  registry-auth caveat).
 
 ## Defense-day talking points
 
@@ -140,6 +165,13 @@ react and ~5 more to scale back down; know the timing.
 - **RG created in bootstrap, not Terraform** (ADR-0006): least-privilege RBAC
   scoping requires the scope to exist before CI identities can be granted
   roles on it.
+- **Pull-based GitOps** (ADR-0008): CI holds zero cluster credentials; deploys
+  are commits to `gitops/values/`, Argo CD reconciles with self-heal, rollback
+  is `git revert`. Demo it live: `kubectl -n app-staging scale deploy/backend
+  --replicas=1` and watch Argo CD put it back.
+- **Supply chain closed end to end** (ADR-0009): Trivy gate → immutable sha
+  tag → cosign keyless signature → Kyverno admission verification; plus
+  gitleaks, Dependabot, and SHA-pinned actions on the repo side.
 - The product idea is still open **by design**: the app layer is a swappable
   stub; the platform (this repo) is the deliverable. Swapping = change
   `apps/`, keep the contract (see `docs/architecture.md`).

@@ -1,0 +1,47 @@
+# Admission verification of cosign keyless signatures (ADR-0009).
+# CI signs every pushed image digest with its GitHub OIDC identity; this policy
+# checks the Fulcio-issued certificate: the signer must be a workflow from THIS
+# repo running on main. An image built anywhere else — or from a branch — fails.
+#
+# failureAction starts as Audit (violations appear in PolicyReports) and is
+# flipped to Enforce once registry access for signature fetch is confirmed:
+# Kyverno pulls signatures from ACR, so its controller needs pull access —
+# either a docker-registry secret wired via `--imagePullSecrets`, or the AKS
+# kubelet identity's AcrPull reachable through IMDS. Verify with a test pod,
+# then change the one line below.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+  annotations:
+    policies.kyverno.io/title: Verify cosign keyless image signatures
+    policies.kyverno.io/description: >-
+      App-namespace images must carry a cosign keyless signature issued to a
+      GitHub Actions workflow of this repository on the main branch.
+spec:
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: require-cosign-keyless-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app-staging, app-production]
+      verifyImages:
+        - imageReferences:
+            - "*.azurecr.io/backend*"
+            - "*.azurecr.io/frontend*"
+          failureAction: Audit # flip to Enforce after validating registry auth (see header)
+          required: true
+          # Replace the tag with the verified digest at admission — even the
+          # pod spec ends up pinned to the exact signed bytes (ADR-0005).
+          mutateDigest: true
+          useCache: true
+          attestors:
+            - count: 1
+              entries:
+                - keyless:
+                    issuer: https://token.actions.githubusercontent.com
+                    subject: https://github.com/Ichihiroy/ironhack-final/.github/workflows/*@refs/heads/main
+                    rekor:
+                      url: https://rekor.sigstore.dev

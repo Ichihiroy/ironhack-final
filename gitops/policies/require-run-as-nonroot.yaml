@@ -1,0 +1,25 @@
+# Both charts already set pod-level runAsNonRoot (backend JVM, unprivileged
+# nginx frontend); this policy turns that convention into an admission gate so
+# a future chart edit — or any hand-rolled pod — can't silently regress it.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-run-as-nonroot
+  annotations:
+    policies.kyverno.io/title: Require runAsNonRoot
+spec:
+  background: true
+  rules:
+    - name: pod-level-run-as-non-root
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [app-staging, app-production]
+      validate:
+        failureAction: Enforce
+        message: "Pods must set securityContext.runAsNonRoot: true."
+        pattern:
+          spec:
+            securityContext:
+              runAsNonRoot: true

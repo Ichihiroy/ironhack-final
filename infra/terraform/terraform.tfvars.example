@@ -10,3 +10,10 @@ location    = "westeurope"
 # system_node_vm_size   = "Standard_D2s_v5"
 # user_node_vm_size     = "Standard_D4s_v5"
 # user_node_max_count   = 6
+
+# GitOps (Argo CD) — see docs/adr/0008. In CI these arrive as TF_VAR_* from
+# the FRONTEND_HOST_* repo variables; set them here only for local plans.
+# gitops_repo_url          = "https://github.com/Ichihiroy/ironhack-final.git"
+# gitops_revision          = "main"
+# frontend_host_staging    = "staging.example.com"
+# frontend_host_production = "app.example.com"

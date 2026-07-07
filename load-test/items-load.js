@@ -1,14 +1,19 @@
 import http from "k6/http";
 import { check } from "k6";
 
-// HPA demo: ramp GET /api/items past 300 req/s and hold, so backend CPU crosses
-// the 70% HPA target and replicas visibly scale 3 → max on the Grafana
-// "Platform" dashboard (HPA panel). See README.md.
+// HPA demo: ramp GET /api/scans/demo/findings past 300 req/s and hold, so
+// backend CPU crosses the 70% HPA target and replicas visibly scale 3 → max on
+// the Grafana "Platform" dashboard (HPA panel). The "demo" scan is seeded at
+// startup (DemoDataSeeder) and its findings are served from the Redis cache, so
+// this exercises the hot cached read path — no DB round-trip per request. See
+// README.md.
 const BASE_URL = __ENV.BASE_URL || "http://localhost:8080";
+// Seeded at startup with zero setup; overridable if pointing at another scan.
+const SCAN_ID = __ENV.SCAN_ID || "demo";
 
 export const options = {
   scenarios: {
-    items: {
+    findings: {
       executor: "ramping-arrival-rate",
       startRate: 20,
       timeUnit: "1s",
@@ -29,9 +34,9 @@ export const options = {
 };
 
 export default function () {
-  const res = http.get(`${BASE_URL}/api/items`);
+  const res = http.get(`${BASE_URL}/api/scans/${SCAN_ID}/findings?page=0&size=50`);
   check(res, {
     "status is 200": (r) => r.status === 200,
-    "returns items": (r) => r.json().length > 0,
+    "returns findings": (r) => r.json("totalItems") > 0,
   });
 }
