@@ -1,20 +1,36 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { api } from "./api";
-import { CATEGORY_LABEL, moneyCents } from "./format";
+import { CATEGORY_LABEL, moneyCents, shortType } from "./format";
 import type { Category, Finding, OptimizedBill, ScanSummary } from "./types";
 import { WasteCounter } from "./components/WasteCounter";
 import { FindingPanel } from "./components/FindingPanel";
 import { OptimizedView } from "./components/OptimizedView";
+import { Landing } from "./components/Landing";
+import {
+  AlertIcon,
+  BoltIcon,
+  CategoryIcon,
+  CloudIcon,
+  DatabaseIcon,
+  ScanIcon,
+  SparkIcon,
+  TerminalIcon,
+} from "./icons";
 import "./styles.css";
 
 const CATEGORIES: Category[] = ["idle", "oversized", "forgotten"];
 const DEMO_SCAN_ID = "demo";
 
-type Source = { kind: "sample"; scanId: string } | { kind: "upload"; file: File };
+type Source =
+  | { kind: "sample"; scanId: string }
+  | { kind: "upload"; file: File };
 
 export default function App() {
-  const [source, setSource] = useState<Source>({ kind: "sample", scanId: DEMO_SCAN_ID });
+  const [source, setSource] = useState<Source>({
+    kind: "sample",
+    scanId: DEMO_SCAN_ID,
+  });
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +47,11 @@ export default function App() {
   const [asking, setAsking] = useState(false);
 
   const revealTimer = useRef<number | null>(null);
+  const scannerRef = useRef<HTMLElement | null>(null);
+
+  function goToScanner() {
+    scannerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   // Stream findings in one-by-one for the reveal effect (whole batch ~1.2s).
   useEffect(() => {
@@ -134,146 +155,243 @@ export default function App() {
     URL.revokeObjectURL(url);
   }
 
-  const shown = useMemo(() => findings.slice(0, visibleCount), [findings, visibleCount]);
+  const shown = useMemo(
+    () => findings.slice(0, visibleCount),
+    [findings, visibleCount],
+  );
 
   return (
     <div className="app">
-      <div className="masthead">
-        <div className="logo">☁️</div>
-        <h1>Overcast</h1>
-      </div>
-      <p className="tagline">Find the waste hiding in your Azure bill — in one scan.</p>
-
-      <div className="controls">
-        <div className="control-group">
-          <label htmlFor="src">Bill to scan</label>
-          <select
-            id="src"
-            value={source.kind === "sample" ? "sample" : "upload"}
-            onChange={(e) =>
-              setSource(
-                e.target.value === "sample"
-                  ? { kind: "sample", scanId: DEMO_SCAN_ID }
-                  : { kind: "upload", file: new File([], "") },
-              )
-            }
-          >
-            <option value="sample">Sample: messy startup bill (seeded)</option>
-            <option value="upload">Upload a CSV…</option>
-          </select>
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-mark">
+            <CloudIcon size={20} />
+          </div>
+          <div className="brand-text">
+            <span className="brand-name">Overcast</span>
+          </div>
         </div>
+      </header>
 
-        {source.kind === "upload" && (
-          <div className="control-group">
-            <label htmlFor="file">Azure usage CSV</label>
-            <input
-              id="file"
-              className="filebtn"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) setSource({ kind: "upload", file });
-              }}
-            />
-            {source.file.name && <div className="filename">{source.file.name}</div>}
+      <main className="workspace">
+        <Landing onStart={goToScanner} />
+
+        <section className="panel scanner" id="scan" ref={scannerRef}>
+          <div className="panel-head">
+            <span className="ph-icon">
+              <DatabaseIcon size={15} />
+            </span>
+            <h2>Scan a bill</h2>
+          </div>
+          <div className="panel-body">
+            <div className="controls">
+              <div className="control-group">
+                <label htmlFor="src">Bill to scan</label>
+                <select
+                  id="src"
+                  value={source.kind === "sample" ? "sample" : "upload"}
+                  onChange={(e) =>
+                    setSource(
+                      e.target.value === "sample"
+                        ? { kind: "sample", scanId: DEMO_SCAN_ID }
+                        : { kind: "upload", file: new File([], "") },
+                    )
+                  }
+                >
+                  <option value="sample">
+                    Sample: messy startup bill (seeded)
+                  </option>
+                  <option value="upload">Upload a CSV…</option>
+                </select>
+              </div>
+
+              {source.kind === "upload" && (
+                <div className="control-group">
+                  <label htmlFor="file">Azure usage CSV</label>
+                  <input
+                    id="file"
+                    className="filebtn"
+                    type="file"
+                    accept=".csv,text/csv"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setSource({ kind: "upload", file });
+                    }}
+                  />
+                  {source.file.name && (
+                    <div className="filename">{source.file.name}</div>
+                  )}
+                </div>
+              )}
+
+              <button
+                className="scan-btn"
+                onClick={runScan}
+                disabled={
+                  scanning || (source.kind === "upload" && !source.file.name)
+                }
+              >
+                <BoltIcon size={16} />
+                {scanning ? "Scanning…" : "Scan bill"}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {error && (
+          <div className="error-banner">
+            <AlertIcon size={16} /> {error}
           </div>
         )}
 
-        <button
-          className="scan-btn"
-          onClick={runScan}
-          disabled={scanning || (source.kind === "upload" && !source.file.name)}
-        >
-          {scanning ? "Scanning…" : "⚡ Scan bill"}
-        </button>
-      </div>
-
-      {error && <div className="error-banner">⚠ {error}</div>}
-
-      {summary && (
-        <>
-          <WasteCounter
-            monthly={summary.totalMonthlyWaste}
-            annual={summary.totalAnnualWaste}
-            currency={summary.currency}
-            findingCount={summary.findingCount}
-            totalCost={summary.totalMonthlyCost}
-          />
-
-          <div className="cat-row">
-            {CATEGORIES.map((c) => (
-              <div key={c} className={`cat-tile category-${c}`}>
-                <div className="k">
-                  <span className="dot" /> {CATEGORY_LABEL[c]}
-                </div>
-                <div className="v">{moneyCents(summary.byCategory[c].monthlySaving, summary.currency)}</div>
-                <div className="n">{summary.byCategory[c].count} resources /mo</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="section-head">
-            <h2>
-              Findings{" "}
-              <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>
-                ({shown.length}/{findings.length})
-              </span>
-            </h2>
-            <button className="ghost-btn" onClick={generateOptimized} disabled={optimizing}>
-              {optimizing ? "Generating…" : "Generate optimized bill"}
-            </button>
-          </div>
-
-          {optimized && <OptimizedView bill={optimized} onExport={exportChecklist} />}
-
-          <form className="ask" onSubmit={submitQuestion}>
-            <input
-              placeholder="Ask about this bill — e.g. where is my money going?"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
+        {summary && (
+          <>
+            <WasteCounter
+              monthly={summary.totalMonthlyWaste}
+              annual={summary.totalAnnualWaste}
+              currency={summary.currency}
+              findingCount={summary.findingCount}
+              totalCost={summary.totalMonthlyCost}
             />
-            <button className="ghost-btn" type="submit" disabled={asking || !question.trim()}>
-              {asking ? "Asking…" : "Ask"}
-            </button>
-          </form>
-          {answer && <div className="ask-answer">{answer}</div>}
 
-          <div className="findings">
-            {shown.map((f) => (
-              <button
-                key={f.id}
-                className={`finding category-${f.category}`}
-                onClick={() => setSelected(f)}
-              >
-                <div className="top">
-                  <span className="name">{f.resourceName}</span>
-                  <span className="save">
-                    {f.monthlySaving > 0 ? (
-                      `${moneyCents(f.monthlySaving, summary.currency)}/mo`
-                    ) : (
-                      <span className="flag-zero">flag</span>
+            <div className="statgrid">
+              {CATEGORIES.map((c) => (
+                <div key={c} className={`stat category-${c}`}>
+                  <div className="stat-label">
+                    <CategoryIcon category={c} size={14} /> {CATEGORY_LABEL[c]}
+                  </div>
+                  <div className="stat-value">
+                    {moneyCents(
+                      summary.byCategory[c].monthlySaving,
+                      summary.currency,
                     )}
-                  </span>
+                  </div>
+                  <div className="stat-foot">
+                    {summary.byCategory[c].count} resources · /mo
+                  </div>
                 </div>
-                <div className="meta">
-                  <span className="badge">{CATEGORY_LABEL[f.category]}</span>
-                  <span>{f.resourceGroup}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+              ))}
+            </div>
 
-      {!summary && !scanning && (
-        <div className="empty">
-          Pick the seeded sample bill and hit <strong>Scan</strong> to see the waste.
-        </div>
-      )}
+            {optimized && (
+              <OptimizedView bill={optimized} onExport={exportChecklist} />
+            )}
+
+            <section className="panel">
+              <div className="panel-head">
+                <span className="ph-icon">
+                  <SparkIcon size={15} />
+                </span>
+                <h2>Ask the assistant</h2>
+              </div>
+              <div className="panel-body">
+                <form className="ask" onSubmit={submitQuestion}>
+                  <input
+                    placeholder="Ask about this bill — e.g. where is my money going?"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                  />
+                  <button
+                    className="ghost-btn"
+                    type="submit"
+                    disabled={asking || !question.trim()}
+                  >
+                    {asking ? "Asking…" : "Ask"}
+                  </button>
+                </form>
+                {answer && (
+                  <div className="ask-answer">
+                    <SparkIcon size={16} />
+                    <span>{answer}</span>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <section className="panel">
+              <div className="panel-head">
+                <span className="ph-icon">
+                  <ScanIcon size={15} />
+                </span>
+                <h2>Findings</h2>
+                <span className="count">
+                  [{shown.length}/{findings.length}]
+                </span>
+                <div className="panel-tools">
+                  <button
+                    className="ghost-btn"
+                    onClick={generateOptimized}
+                    disabled={optimizing}
+                  >
+                    <TerminalIcon size={14} />
+                    {optimizing ? "Generating…" : "Generate optimized bill"}
+                  </button>
+                </div>
+              </div>
+              <div className="panel-body no-pad">
+                <div className="ftable" role="table" aria-label="Findings">
+                  <div className="ft-head" role="row">
+                    <span className="ft-c-res">Resource</span>
+                    <span className="ft-c-cat">Category</span>
+                    <span className="ft-c-grp">Resource group</span>
+                    <span className="ft-c-num">Cost /mo</span>
+                    <span className="ft-c-num">Saving /mo</span>
+                  </div>
+                  {shown.map((f) => (
+                    <button
+                      key={f.id}
+                      className={`ft-row category-${f.category}`}
+                      onClick={() => setSelected(f)}
+                      role="row"
+                    >
+                      <span className="ft-res">
+                        <span className="ft-dot" aria-hidden="true" />
+                        <span className="ft-res-text">
+                          <span className="ft-name">{f.resourceName}</span>
+                          <span className="ft-type">{shortType(f.resourceType)}</span>
+                        </span>
+                      </span>
+                      <span className="ft-cat">
+                        <span className="badge">{CATEGORY_LABEL[f.category]}</span>
+                      </span>
+                      <span className="ft-grp" title={f.resourceGroup}>
+                        {f.resourceGroup || "—"}
+                      </span>
+                      <span className="ft-num cost">
+                        {moneyCents(f.monthlyCost, summary.currency)}
+                      </span>
+                      <span className="ft-num save">
+                        {f.monthlySaving > 0 ? (
+                          moneyCents(f.monthlySaving, summary.currency)
+                        ) : (
+                          <span className="flag-zero">flag</span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+
+        {!summary && !scanning && (
+          <div className="empty">
+            <ScanIcon size={30} />
+            <div>
+              Pick the seeded sample bill and hit <strong>Scan bill</strong> to
+              see the waste.
+            </div>
+          </div>
+        )}
+      </main>
 
       {selected && summary && (
-        <FindingPanel finding={selected} currency={summary.currency} onClose={() => setSelected(null)} />
+        <FindingPanel
+          finding={selected}
+          currency={summary.currency}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   );

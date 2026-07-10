@@ -1,5 +1,6 @@
 import { moneyCents } from "../format";
 import { useCountUp } from "../useCountUp";
+import { CheckIcon } from "../icons";
 
 interface Props {
   monthly: number;
@@ -9,26 +10,30 @@ interface Props {
   totalCost: number;
 }
 
-/** The hero: a large counter that animates up to the wasted total. */
+/** The hero: a large monospace counter that animates up to the wasted total. */
 export function WasteCounter({ monthly, annual, currency, findingCount, totalCost }: Props) {
   const animatedMonthly = useCountUp(monthly);
   const animatedAnnual = useCountUp(annual);
   const pct = totalCost > 0 ? Math.round((monthly / totalCost) * 100) : 0;
 
   return (
-    <section className="hero" aria-live="polite">
-      <p className="eyebrow">Wasted spend detected</p>
+    <section className="panel hero" aria-live="polite">
+      <p className="eyebrow">
+        <span className="pip" /> Wasted spend detected
+      </p>
       <div className="counter">
         {moneyCents(animatedMonthly, currency)}
         <span className="per"> /mo</span>
         <span className="sep"> · </span>
-        {moneyCents(animatedAnnual, currency)}
+        <span className="annual">{moneyCents(animatedAnnual, currency)}</span>
         <span className="per"> /yr</span>
       </div>
       <p className="hero-sub">
-        <strong>{findingCount}</strong> wasteful resources — about{" "}
-        <strong>{pct}%</strong> of the {moneyCents(totalCost, currency)}/mo bill.
-        Every figure computed by the deterministic rules engine.
+        <strong>{findingCount}</strong> wasteful resources — about <strong>{pct}%</strong> of the{" "}
+        {moneyCents(totalCost, currency)}/mo bill.
+      </p>
+      <p className="hero-note">
+        <CheckIcon size={13} /> Every figure computed by the deterministic rules engine
       </p>
     </section>
   );

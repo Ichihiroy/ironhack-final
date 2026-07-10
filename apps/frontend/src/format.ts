@@ -22,3 +22,9 @@ export const CATEGORY_LABEL: Record<string, string> = {
   oversized: "Oversized",
   forgotten: "Forgotten",
 };
+
+/** "Microsoft.Compute/virtualMachines" → "virtualMachines" (last path segment). */
+export function shortType(resourceType: string): string {
+  const seg = resourceType.split("/").pop() ?? resourceType;
+  return seg;
+}
