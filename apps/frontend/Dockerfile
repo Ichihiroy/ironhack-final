@@ -18,4 +18,9 @@ COPY docker-entrypoint.d/10-runtime-env.sh /docker-entrypoint.d/10-runtime-env.s
 # --chown so the entrypoint (running as nginx, uid 101) can rewrite env.js at start
 COPY --from=build --chown=nginx:nginx /workspace/dist /usr/share/nginx/html
 
+# Explicit non-root user (uid 101 = nginx in the unprivileged base). Redundant
+# with the base image's default, but declared so the guarantee survives a base
+# bump and satisfies image-scanners (Trivy DS-0002) that can't see through FROM.
+USER 101
+
 EXPOSE 8080

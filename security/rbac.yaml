@@ -2,9 +2,13 @@
 # (deploy/*/templates/serviceaccount.yaml) and deliberately have NO Role
 # bound — the apps never touch the Kubernetes API (least privilege = zero).
 #
-# These roles are for humans/CI once AKS Entra ID integration is enabled;
-# replace the placeholder group object ids. With local cluster accounts
-# (current setup) they are inert but document the intended model.
+# Only a read-only developer-view Role is defined. There is deliberately NO
+# CI/deploy Role: deploys are pull-based (Argo CD reconciles git → cluster,
+# ADR-0008), so no human or pipeline identity is ever granted create/update/
+# delete on workloads — that authority lives solely with the in-cluster Argo CD
+# controller, which no external credential can assume. Bind developer-view to a
+# real Entra group object id once AKS Entra ID integration is enabled
+# (placeholder below; inert with local cluster accounts).
 ---
 # Read-only troubleshooting access for developers, per app namespace.
 apiVersion: rbac.authorization.k8s.io/v1

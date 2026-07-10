@@ -7,6 +7,21 @@ resource "azurerm_log_analytics_workspace" "main" {
   tags                = var.tags
 }
 
+# Risk-accepted (two IaC findings), both consequences of the single-subscription
+# student platform's access model — documented here so the acceptance is auditable:
+#
+#  AZU-0041 (no api_server_access_profile allow-list): `terraform apply` and the
+#    in-cluster add-on installs run from the GitHub Actions runner via the helm
+#    provider, whose egress IPs are dynamic and unbounded — an IP allow-list would
+#    lock CI (and the operator's port-forward) out of the API server.
+#  AZU-0042 (no managed Azure AD RBAC): Kubernetes RBAC is always enabled on v4
+#    clusters; Azure AD RBAC/SSO is deferred because the Terraform helm provider
+#    authenticates with the admin kube_config and there is a single operator
+#    (port-forward access, GUIDE.md). Enabling it requires switching the provider
+#    to kube_admin_config and provisioning an AAD admin group — tracked as
+#    multi-operator hardening. See security/SECURITY.md.
+#trivy:ignore:AVD-AZU-0041 exp:2027-01-01
+#trivy:ignore:AVD-AZU-0042 exp:2027-01-01
 resource "azurerm_kubernetes_cluster" "main" {
   name                = "aks-${local.name_prefix}"
   resource_group_name = data.azurerm_resource_group.main.name

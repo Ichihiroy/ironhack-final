@@ -1,3 +1,11 @@
+# Risk-accepted: no network_acls default-deny. Pods read secrets from the Key
+# Vault DATA plane over its public endpoint using workload identity (federated
+# credential below) — there is no private endpoint, and the AKS egress IP is
+# AKS-managed/unstable, so `default_action = "Deny"` would break CSI secret sync
+# (backend readiness) and CI secret writes from the GitHub runner. Access is
+# still gated by Azure RBAC (rbac_authorization_enabled) + workload identity.
+# Revisit when a Key Vault private endpoint is added. See security/SECURITY.md.
+#trivy:ignore:AVD-AZU-0013 exp:2027-01-01
 resource "azurerm_key_vault" "main" {
   name                       = "kv-${local.name_compact}"
   resource_group_name        = data.azurerm_resource_group.main.name
