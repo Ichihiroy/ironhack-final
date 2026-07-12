@@ -14,8 +14,10 @@ RUN mvn -q -B package -DskipTests && \
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-RUN addgroup -S app && adduser -S -G app app
-USER app
+# Numeric uid so Kubernetes runAsNonRoot can verify non-root without a chart
+# runAsUser (a named USER fails that admission check). 10001 = dedicated app user.
+RUN addgroup -S app && adduser -S -G app -u 10001 app
+USER 10001
 
 COPY --from=build /workspace/extracted/dependencies/ ./
 COPY --from=build /workspace/extracted/spring-boot-loader/ ./
