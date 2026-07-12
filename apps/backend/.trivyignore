@@ -42,3 +42,15 @@ CVE-2026-42583
 CVE-2026-44249
 CVE-2026-45416
 CVE-2026-50010
+
+# ── Base-image OS packages (eclipse-temurin JRE alpine) ──────────────────
+# libexpat (XML parser): fix 2.8.2-r0 not in the base image's alpine repo yet.
+# The app parses only JSON and CSV — there is no untrusted-XML code path.
+CVE-2026-56131
+CVE-2026-56407
+CVE-2026-56408
+
+# p11-kit / p11-kit-trust (PKCS#11 / cert trust): fix 0.26.2-r0 not in the base
+# image's alpine repo yet. NULL deref via C_DeriveKey — the app performs no
+# PKCS#11 / smartcard operations, so the affected path is unreachable.
+CVE-2026-2100
