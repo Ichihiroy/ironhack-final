@@ -128,16 +128,22 @@ react and ~5 more to scale back down; know the timing.
 
 ## Morning kickstart (the subscription is wiped nightly)
 
-The training subscription deletes resources around midnight. Everything above
-is pipeline-driven, so bringing the platform back is two button presses in
-the Actions tab — start ~45 min before you need it live:
+The training subscription deletes **everything, resource groups included**,
+around midnight. The Entra apps, federated OIDC credentials, and GitHub
+configuration live in the tenant and survive — so the rebuild is one script
+plus two button presses. Start ~45 min before you need it live:
 
+0. **Rerun the bootstrap** (any teammate with Owner, after `az login`):
+   `cd infra/bootstrap && SUBSCRIPTION_ID=... GITHUB_REPO=... ./bootstrap.sh`
+   — recreates the two resource groups, the tfstate storage account, and the
+   RG-scoped role assignments. The Entra sections no-op (already exist), so
+   this takes ~1 minute. It's idempotent: safe to run even if unsure what
+   survived. Lost tfstate is fine — the resources it described are gone too,
+   so the apply builds from zero (the soft-deleted Key Vault is auto-recovered
+   by the provider).
 1. **Actions → infra-apply → Run workflow** (on `main`), then approve the
    `production` gate. ~15–20 min: recreates AKS/ACR/SQL/Key Vault and installs
    Argo CD, Kyverno, ingress-nginx, cert-manager, and the monitoring stack.
-   (Requires the tfstate storage account `stthelocalsironhacktf` to have
-   survived the wipe — it usually does, being in its own resource group. If it
-   didn't: rerun `infra/bootstrap/bootstrap.sh` first.)
 2. **Actions → backend-ci-cd → Run workflow** and **frontend-ci-cd → Run
    workflow** (on `main`). The fresh ACR is empty; these rebuild and re-push
    the exact `sha-<gitsha>` tags that `gitops/values/` already pins, re-sign
