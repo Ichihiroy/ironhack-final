@@ -3,31 +3,22 @@
 Prometheus + Grafana + Alertmanager via **kube-prometheus-stack**, scraping the
 backend's Micrometer endpoint (`/actuator/prometheus`).
 
-## Install (once per cluster, after infra apply)
+## Install (automatic — no manual steps)
 
-```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm upgrade --install kps prometheus-community/kube-prometheus-stack \
-  --namespace monitoring --create-namespace \
-  -f kube-prometheus-stack-values.yaml \
-  --set grafana.adminPassword="$(openssl rand -base64 24)"   # or your own; never commit one
+The infra pipeline installs everything; nothing here is applied by hand (the
+training subscription is wiped nightly, so hand-installed pieces wouldn't
+survive — see GUIDE.md "Morning kickstart"):
 
-kubectl apply -f servicemonitor-backend.yaml
-kubectl apply -f prometheus-rules.yaml
-```
-
-## Load the dashboards
-
-The Grafana sidecar watches for ConfigMaps labeled `grafana_dashboard=1`:
-
-```bash
-for d in dashboards/*.json; do
-  name=$(basename "$d" .json)
-  kubectl create configmap "dash-$name" -n monitoring --from-file="$d" \
-    --dry-run=client -o yaml | kubectl apply -f -
-  kubectl label configmap "dash-$name" -n monitoring grafana_dashboard=1 --overwrite
-done
-```
+- **kube-prometheus-stack** chart: installed by Terraform
+  (`infra/terraform/platform.tf`) with `kube-prometheus-stack-values.yaml`
+  from this directory. The Grafana admin password is Terraform-generated and
+  stored only in Key Vault (`grafana-admin-password`).
+- **ServiceMonitor, alert rules, dashboards**: synced by the `observability`
+  Argo CD Application (`infra/terraform/gitops.tf`) via `kustomization.yaml`
+  in this directory — its `configMapGenerator` wraps each `dashboards/*.json`
+  into a ConfigMap labeled `grafana_dashboard=1`, which the Grafana sidecar
+  auto-loads. To add a dashboard: drop the JSON in `dashboards/`, add a
+  generator entry, commit.
 
 | Dashboard              | Shows                                                        |
 | ---------------------- | ------------------------------------------------------------ |

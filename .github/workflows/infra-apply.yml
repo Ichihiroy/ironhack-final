@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - "infra/**"
+  # Morning kickstart (GUIDE.md): the training subscription is wiped nightly;
+  # this button re-creates the entire platform from the last-applied state.
+  # Still reviewer-gated — the job runs in the 'production' environment.
+  workflow_dispatch:
 
 # Never cancel a running apply (state corruption risk); queue instead.
 concurrency:

@@ -1,0 +1,27 @@
+# Synced by Argo CD (the `observability` Application in infra/terraform/
+# gitops.tf). configMapGenerator replaces the manual "wrap each dashboard
+# JSON in a labeled ConfigMap" loop that used to live in this README —
+# the Grafana sidecar picks up anything labeled grafana_dashboard=1.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: monitoring
+
+resources:
+  - servicemonitor-backend.yaml
+  - prometheus-rules.yaml
+
+generatorOptions:
+  # Stable names: the sidecar tracks ConfigMaps by name; a content-hash
+  # suffix would leave stale dashboard copies behind on every edit.
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+
+configMapGenerator:
+  - name: dash-backend-api
+    files:
+      - dashboards/backend-api.json
+  - name: dash-platform
+    files:
+      - dashboards/platform.json

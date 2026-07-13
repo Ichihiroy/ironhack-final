@@ -105,6 +105,48 @@ locals {
       }
     },
     {
+      # ServiceMonitor + PrometheusRule + Grafana dashboard ConfigMaps.
+      # observability/kustomization.yaml wraps the dashboard JSON into
+      # labeled ConfigMaps — no manual `kubectl create configmap` loop.
+      observability = {
+        namespace = "argocd"
+        project   = "default"
+        destination = {
+          server    = "https://kubernetes.default.svc"
+          namespace = "monitoring"
+        }
+        sources = [
+          {
+            repoURL        = var.gitops_repo_url
+            targetRevision = var.gitops_revision
+            path           = "observability"
+          }
+        ]
+        syncPolicy = local.argo_sync_policy
+      }
+    },
+    {
+      # Default-deny baseline + egress allow-lists. Each manifest carries its
+      # own namespace (app-staging / app-production); destination is nominal.
+      networkpolicies = {
+        namespace = "argocd"
+        project   = "default"
+        destination = {
+          server    = "https://kubernetes.default.svc"
+          namespace = "app-staging"
+        }
+        sources = [
+          {
+            repoURL        = var.gitops_repo_url
+            targetRevision = var.gitops_revision
+            path           = "security"
+            directory      = { include = "networkpolicies.yaml" }
+          }
+        ]
+        syncPolicy = local.argo_sync_policy
+      }
+    },
+    {
       # Kyverno ClusterPolicies are cluster-scoped; destination ns is nominal.
       kyverno-policies = {
         namespace = "argocd"
@@ -174,6 +216,9 @@ resource "helm_release" "argocd_apps" {
     applications = local.argo_applications
   })]
 
-  # Kyverno must exist before Argo CD syncs gitops/policies/.
-  depends_on = [helm_release.argocd, helm_release.kyverno]
+  # Kyverno must exist before Argo CD syncs gitops/policies/, and the
+  # ServiceMonitor/PrometheusRule CRDs (installed by kube-prometheus-stack)
+  # before it syncs observability/ — automated syncs stop retrying after the
+  # retry budget, so don't race the CRDs.
+  depends_on = [helm_release.argocd, helm_release.kyverno, helm_release.kube_prometheus_stack]
 }

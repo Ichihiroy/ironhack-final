@@ -1,6 +1,6 @@
 # Helm values for kube-prometheus-stack (namespace: monitoring).
-# Install command in observability/README.md. Grafana admin password is passed
-# at install time (--set grafana.adminPassword=...), never committed.
+# Installed by Terraform (infra/terraform/platform.tf), which layers the
+# generated Grafana admin password on top — never committed here.
 fullnameOverride: kps
 
 prometheus:
@@ -23,8 +23,9 @@ alertmanager:
 
 grafana:
   enabled: true
-  # Dashboards are loaded from ConfigMaps labeled grafana_dashboard=1
-  # (see observability/README.md for the one-liner per JSON file).
+  # Dashboards are loaded from ConfigMaps labeled grafana_dashboard=1,
+  # generated from dashboards/*.json by observability/kustomization.yaml
+  # (synced by Argo CD).
   sidecar:
     dashboards:
       enabled: true
