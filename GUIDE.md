@@ -144,6 +144,10 @@ plus two button presses. Start ~45 min before you need it live:
 1. **Actions → infra-apply → Run workflow** (on `main`), then approve the
    `production` gate. ~15–20 min: recreates AKS/ACR/SQL/Key Vault and installs
    Argo CD, Kyverno, ingress-nginx, cert-manager, and the monitoring stack.
+   Expect the first apply step to **fail and self-heal**: the soft-deleted,
+   purge-protected Key Vault is recovered *with yesterday's secrets*, which
+   the fresh state doesn't know — the workflow then deletes the stale secrets
+   and re-applies automatically (still one dispatch, a few extra minutes).
 2. **Actions → backend-ci-cd → Run workflow** and **frontend-ci-cd → Run
    workflow** (on `main`). The fresh ACR is empty; these rebuild and re-push
    the exact `sha-<gitsha>` tags that `gitops/values/` already pins, re-sign
@@ -166,6 +170,12 @@ plus two button presses. Start ~45 min before you need it live:
   `environment:` block). Subjects are listed in `infra/bootstrap/bootstrap.sh`.
 - **First infra PR fails at init** → repo variables from step 3 missing or
   misnamed.
+- **Apply errors `a resource with the ID ".../secrets/sql-datasource-..."
+  already exists`** → the recovered Key Vault still holds yesterday's secrets.
+  The apply workflow cleans them up and retries on its own; if running
+  Terraform another way, `az keyvault secret delete` the four secrets
+  (`sql-datasource-url/username/password`, `grafana-admin-password`) and
+  re-apply — the provider recovers the soft-deleted secrets and rewrites them.
 - **Promote job can't push to main** → the branch-protection ruleset is
   missing the `github-actions` bypass actor (step 2).
 - **Kyverno signature policy**: ships in **Audit** mode. After the first

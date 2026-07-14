@@ -57,7 +57,43 @@ jobs:
         run: terraform -chdir=${{ env.TF_DIR }} plan -input=false -out=tfplan
 
       - name: Terraform apply (the reviewed plan file, nothing else)
+        id: apply
+        continue-on-error: true
         run: terraform -chdir=${{ env.TF_DIR }} apply -input=false tfplan
+
+      # Nightly-wipe recovery (GUIDE.md "Morning kickstart"). The wiped Key
+      # Vault is soft-deleted + purge-protected, so the apply above recovers
+      # it — complete with yesterday's secrets, which the fresh state doesn't
+      # know about ("already exists ... needs to be imported"). Fix: delete
+      # the stale secrets (they go soft-deleted; the azurerm provider's
+      # recover_soft_deleted_secrets then recovers and rewrites them) and
+      # apply once more. Harmless if the apply failed for another reason:
+      # deleting secrets Terraform already manages just makes the retry
+      # recreate them with the same values from state.
+      - name: Azure login (stale Key Vault secret cleanup)
+        if: steps.apply.outcome == 'failure'
+        uses: azure/login@a457da9ea143d694b1b9c7c869ebb04ebe844ef5 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID_PLATFORM_RW }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Clear stale Key Vault secrets
+        if: steps.apply.outcome == 'failure'
+        run: |
+          KV=$(az keyvault list -g "${{ vars.APP_RESOURCE_GROUP }}" --query "[0].name" -o tsv)
+          if [ -z "$KV" ]; then echo "No Key Vault in RG — nothing to clean"; exit 0; fi
+          for s in sql-datasource-url sql-datasource-username sql-datasource-password grafana-admin-password; do
+            az keyvault secret delete --vault-name "$KV" --name "$s" -o none 2>/dev/null \
+              && echo "deleted stale secret: $s" || echo "skip: $s"
+          done
+          sleep 20 # let the soft-delete settle before the retry recovers them
+
+      # Fresh plan, same reviewed commit, same gated environment — the plan
+      # file above is stale after the partial first apply.
+      - name: Terraform apply (retry after cleanup)
+        if: steps.apply.outcome == 'failure'
+        run: terraform -chdir=${{ env.TF_DIR }} apply -input=false -auto-approve
 
       - name: Show outputs
         run: terraform -chdir=${{ env.TF_DIR }} output
