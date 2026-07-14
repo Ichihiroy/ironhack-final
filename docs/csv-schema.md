@@ -12,6 +12,12 @@ Azure Portal → **Cost Management + Billing** → **Cost analysis** →
 *Download* / *Exports* → **usage details** (CSV). Column names vary slightly by
 API version, so the parser accepts several header aliases per field.
 
+> **Wrong file trap**: the Cost analysis blade's default *Download* gives a
+> **daily-totals** CSV (`UsageDate,Cost,...`) with no per-resource rows —
+> nothing to scan. The parser detects this shape and says so. Group the view
+> by **Resource** before downloading (or use *Usage + charges → Download
+> usage*) to get the per-resource export.
+
 ## Columns
 
 Headers are matched **case-insensitively**; the first alias found wins.

@@ -85,6 +85,20 @@ class AzureUsageCsvParserTest {
     }
 
     @Test
+    void rejectsCostAnalysisDailyTotalsExportWithTargetedMessage() {
+        // The portal's "Cost analysis" download — daily totals, no resources.
+        String csv = """
+                "UsageDate","CostUSD","Cost","Currency"
+                "2026-07-01","0.0000018","0.0000016","EUR"
+                "2026-07-02","22.04","19.34","EUR"
+                """;
+        assertThatThrownBy(() -> parser.parse(new StringReader(csv)))
+                .isInstanceOf(CsvFormatException.class)
+                .hasMessageContaining("Cost analysis daily-totals")
+                .hasMessageContaining("usage details");
+    }
+
+    @Test
     void rejectsCsvMissingRequiredColumns() {
         String csv = """
                 ResourceId,ResourceGroup,Cost

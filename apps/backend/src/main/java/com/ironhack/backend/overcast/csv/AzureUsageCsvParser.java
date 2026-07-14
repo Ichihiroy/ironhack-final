@@ -63,6 +63,15 @@ public final class AzureUsageCsvParser {
         }
 
         Map<String, Integer> idx = headerIndex(rows.get(0));
+        // The portal's "Cost analysis" download (UsageDate,Cost,...) is daily
+        // totals from the same blade — wrong artifact: no per-resource rows.
+        if (!idx.containsKey("resourceId") && hasHeader(rows.get(0), "usagedate")) {
+            throw new CsvFormatException("This is a Cost analysis daily-totals export "
+                    + "(UsageDate/Cost) — it has no per-resource data, so nothing can be scanned. "
+                    + "Download the per-resource usage details export instead: Cost analysis → "
+                    + "group by Resource → Download, or Cost Management → Usage + charges → "
+                    + "Download usage. See docs/csv-schema.md.");
+        }
         for (String required : REQUIRED) {
             if (!idx.containsKey(required)) {
                 throw new CsvFormatException("Missing required column '" + required
@@ -155,6 +164,10 @@ public final class AzureUsageCsvParser {
         } catch (IOException e) {
             return Map.of(); // unparseable tags = untagged, the conservative reading
         }
+    }
+
+    private static boolean hasHeader(List<String> header, String name) {
+        return header.stream().anyMatch(h -> h.trim().toLowerCase(Locale.ROOT).equals(name));
     }
 
     private static Map<String, Integer> headerIndex(List<String> header) {
