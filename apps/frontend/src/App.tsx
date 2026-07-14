@@ -16,6 +16,7 @@ import {
   ScanIcon,
   SparkIcon,
   TerminalIcon,
+  UploadIcon,
 } from "./icons";
 import "./styles.css";
 
@@ -223,19 +224,27 @@ export default function App() {
                   </div>
                   <div className="control-group">
                     <label htmlFor="file">Billing export CSV</label>
+                    <label
+                      className={
+                        "filebtn" + (source.file.name ? " filebtn-picked" : "")
+                      }
+                      htmlFor="file"
+                    >
+                      <UploadIcon size={15} />
+                      <span className="filebtn-text">
+                        {source.file.name || "Choose a CSV file…"}
+                      </span>
+                    </label>
                     <input
                       id="file"
-                      className="filebtn"
                       type="file"
                       accept=".csv,text/csv"
+                      hidden
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) setSource({ kind: "upload", file });
                       }}
                     />
-                    {source.file.name && (
-                      <div className="filename">{source.file.name}</div>
-                    )}
                   </div>
                 </>
               )}

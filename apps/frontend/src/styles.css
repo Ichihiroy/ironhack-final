@@ -290,11 +290,39 @@ select:focus,
   opacity: 0.5;
   cursor: not-allowed;
 }
-.filename {
+/* Custom file trigger: the native input is hidden, this label proxies it.
+   One-line, fixed height — long filenames truncate instead of wrapping and
+   breaking the control row's baseline. */
+.filebtn,
+.controls label.filebtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: var(--text-dim);
-  font-size: 0.78rem;
-  margin-top: 0.35rem;
+  user-select: none;
+  /* it IS a <label>, so undo the tiny uppercase field-label treatment */
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: var(--sans);
+  font-size: 0.88rem;
+  margin-bottom: 0;
+}
+.filebtn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.filebtn-picked {
+  color: var(--text);
   font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.filebtn svg {
+  flex: none;
+}
+.filebtn-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .error-banner {
   display: flex;

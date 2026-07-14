@@ -71,6 +71,12 @@ export const DownloadIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const UploadIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+  </Svg>
+);
+
 export const ArrowRightIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M5 12h14M13 6l6 6-6 6" />
