@@ -155,9 +155,9 @@ variable "azure_openai_deployment" {
 }
 
 variable "azure_openai_api_version" {
-  description = "Azure OpenAI REST api-version the backend calls."
+  description = "\"v1\" = the evergreen /openai/v1 route (current models); a dated version like \"2024-06-01\" switches the backend to the legacy per-deployment route."
   type        = string
-  default     = "2024-06-01"
+  default     = "v1"
 }
 
 variable "azure_openai_api_key" {
