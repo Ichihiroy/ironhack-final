@@ -30,8 +30,9 @@ Every control below is enforced by a file in this repo, not by convention.
   **private endpoint** in `snet-data` with private DNS (`sql.tf`).
 - **Default-deny ingress** baseline per app namespace, then explicit allows:
   frontend ← ingress controller only; backend ← frontend + ingress + Prometheus
-  only; frontend egress → backend + DNS only; backend egress → SQL + DNS only
-  (`networkpolicies.yaml`, chart NetworkPolicies).
+  only; ACME solver pods ← ingress controller only (HTTP01 challenges);
+  frontend egress → backend + DNS only; backend egress → SQL + HTTPS (Azure
+  OpenAI) + DNS only (`networkpolicies.yaml`, chart NetworkPolicies).
 - Enforced by Azure CNI network policy (`network_policy = "azure"` in `aks.tf`).
 - **TLS**: HTTPS terminates at the NGINX ingress (cert-manager / Let's
   Encrypt); nothing is reachable except through it. In-cluster hops are plain

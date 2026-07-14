@@ -1,0 +1,28 @@
+# Let's Encrypt production issuer (cert-manager is installed by
+# infra/terraform/platform.tf; this resource is synced by Argo CD so it
+# survives the nightly wipe like everything else).
+#
+# HTTP01 via the shared ingress-nginx controller: cert-manager spawns a
+# temporary solver pod + Ingress in the app namespace to answer the ACME
+# challenge. Two guardrails elsewhere make that possible:
+#   - gitops/policies/restrict-registries.yaml excludes solver pods
+#     (the solver image lives on quay.io, not our ACR)
+#   - security/networkpolicies.yaml allows ingress to solver pods
+#     (the namespaces are default-deny)
+#
+# The hostname is the Azure DNS label bound to the static ingress IP
+# (infra/terraform/platform.tf) — no purchased domain needed.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ichihiroy9@gmail.com # expiry notices only
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            ingressClassName: nginx

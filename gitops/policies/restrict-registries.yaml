@@ -15,6 +15,18 @@ spec:
           - resources:
               kinds: [Pod]
               namespaces: [app-staging, app-production]
+      exclude:
+        any:
+          # cert-manager's ACME HTTP01 solver (quay.io image) is spawned in
+          # the app namespaces to answer Let's Encrypt challenges. Only
+          # cert-manager's ServiceAccount can realistically create pods here
+          # (app RBAC has no pod-create), so the label is not a bypass hole.
+          - resources:
+              kinds: [Pod]
+              namespaces: [app-staging, app-production]
+              selector:
+                matchLabels:
+                  acme.cert-manager.io/http01-solver: "true"
       validate:
         failureAction: Enforce
         message: "App images must come from the team ACR (*.azurecr.io)."

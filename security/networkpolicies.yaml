@@ -39,7 +39,8 @@ spec:
         - protocol: TCP
           port: 53
 ---
-# Backend pods reach DNS + SQL (private endpoint, 1433) only.
+# Backend pods reach DNS, SQL (private endpoint, 1433) and HTTPS (Azure
+# OpenAI — the optional AI assistant) only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -57,10 +58,35 @@ spec:
           port: 1433 # Azure SQL via private endpoint in snet-data
     - to: []
       ports:
+        - protocol: TCP
+          port: 443 # Azure OpenAI (AI assistant); no other outbound HTTP use
+    - to: []
+      ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+---
+# cert-manager's ACME HTTP01 solver pods are spawned in this namespace to
+# answer Let's Encrypt challenges; default-deny would black-hole them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-solver
+  namespace: app-production
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8089 # solver's listen port
 ---
 # ── app-staging (same baseline) ──────────────────────────────────────
 apiVersion: networking.k8s.io/v1
@@ -114,7 +140,30 @@ spec:
           port: 1433
     - to: []
       ports:
+        - protocol: TCP
+          port: 443 # Azure OpenAI (AI assistant)
+    - to: []
+      ports:
         - protocol: UDP
           port: 53
         - protocol: TCP
           port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-acme-solver
+  namespace: app-staging
+spec:
+  podSelector:
+    matchLabels:
+      acme.cert-manager.io/http01-solver: "true"
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8089

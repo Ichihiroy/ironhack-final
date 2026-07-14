@@ -150,6 +150,28 @@ locals {
       }
     },
     {
+      # letsencrypt-prod ClusterIssuer (cluster-scoped; destination nominal).
+      # Separate app so cert issuance config is visible/rollback-able on its
+      # own; cert-manager CRDs come from platform.tf, Argo's retry absorbs
+      # the ordering.
+      cert-issuer = {
+        namespace = "argocd"
+        project   = "default"
+        destination = {
+          server    = "https://kubernetes.default.svc"
+          namespace = "cert-manager"
+        }
+        sources = [
+          {
+            repoURL        = var.gitops_repo_url
+            targetRevision = var.gitops_revision
+            path           = "gitops/cert"
+          }
+        ]
+        syncPolicy = local.argo_sync_policy
+      }
+    },
+    {
       # Kyverno ClusterPolicies are cluster-scoped; destination ns is nominal.
       kyverno-policies = {
         namespace = "argocd"
@@ -223,5 +245,5 @@ resource "helm_release" "argocd_apps" {
   # ServiceMonitor/PrometheusRule CRDs (installed by kube-prometheus-stack)
   # before it syncs observability/ — automated syncs stop retrying after the
   # retry budget, so don't race the CRDs.
-  depends_on = [helm_release.argocd, helm_release.kyverno, helm_release.kube_prometheus_stack]
+  depends_on = [helm_release.argocd, helm_release.kyverno, helm_release.kube_prometheus_stack, helm_release.cert_manager]
 }
