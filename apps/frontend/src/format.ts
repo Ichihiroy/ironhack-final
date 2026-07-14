@@ -21,6 +21,7 @@ export const CATEGORY_LABEL: Record<string, string> = {
   idle: "Idle",
   oversized: "Oversized",
   forgotten: "Forgotten",
+  governance: "Governance",
 };
 
 /** "Microsoft.Compute/virtualMachines" → "virtualMachines" (last path segment). */

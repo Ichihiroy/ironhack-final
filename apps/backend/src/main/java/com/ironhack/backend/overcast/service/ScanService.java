@@ -184,9 +184,11 @@ public class ScanService {
         List<String> warnings = scan.dataNotes() == null || scan.dataNotes().isBlank()
                 ? List.of()
                 : List.of(scan.dataNotes().split("\n"));
+        long wasteful = rows.stream().filter(f -> f.monthlySaving().signum() > 0).count();
         return new ScanSummary(scan.id(), scan.filename(), scan.currency(),
                 scan.totalMonthlyCost(), scan.totalMonthlyWaste(),
-                annual(scan.totalMonthlyWaste()), rows.size(), categoryTotals(rows), warnings);
+                annual(scan.totalMonthlyWaste()), rows.size(), wasteful,
+                categoryTotals(rows), warnings);
     }
 
     /**

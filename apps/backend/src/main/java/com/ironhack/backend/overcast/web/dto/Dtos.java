@@ -22,6 +22,9 @@ public final class Dtos {
             BigDecimal totalMonthlyWaste,
             BigDecimal totalAnnualWaste,
             long findingCount,
+            // Findings with actual dollars attached — governance ($0) flags
+            // are in findingCount/byCategory but never in this number.
+            long wastefulCount,
             Map<String, CategoryTotal> byCategory,
             // Data-quality notices (e.g. raw export missing enrichment columns so
             // some rules could not run); empty when the export was fully enriched.

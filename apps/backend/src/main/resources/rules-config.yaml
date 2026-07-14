@@ -15,7 +15,8 @@ constants:
   snapshot_age_days: 90     # older than this with no lifecycle policy = forgotten
   sustained_hours: 700      # ≥700h of 730h month = effectively always-on
   nonprod_rg_pattern: "(?i).*(dev|test|sandbox|qa).*"
-  required_tags: [owner, env]
+  # each entry may list accepted aliases separated by "|"
+  required_tags: [owner, "env|environment"]
   prev_gen_skus:
     - Standard_A2
     - Standard_A4
@@ -80,7 +81,7 @@ rules:
 
   - id: untagged
     name: Missing governance tags
-    category: forgotten
+    category: governance
     predicate: "resource is missing any of required_tags"
     saving: "0 (governance flag only — never counted as dollar waste)"
     remediation: "Tag '{resource}' with owner and env so the bill has an accountable owner."

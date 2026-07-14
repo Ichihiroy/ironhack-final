@@ -151,9 +151,12 @@ public class RulesEngine {
     }
 
     private Optional<BigDecimal> untagged(NormalizedResource r) {
+        // A required-tags entry may list accepted aliases: "env|environment".
         boolean missing = config.requiredTags().stream()
-                .anyMatch(tag -> !r.tags().containsKey(tag.toLowerCase(Locale.ROOT))
-                        || r.tags().get(tag.toLowerCase(Locale.ROOT)).isBlank());
+                .anyMatch(tag -> java.util.Arrays.stream(tag.split("\\|"))
+                        .map(alias -> alias.trim().toLowerCase(Locale.ROOT))
+                        .noneMatch(alias -> r.tags().containsKey(alias)
+                                && !r.tags().get(alias).isBlank()));
         return missing ? Optional.of(BigDecimal.ZERO) : Optional.empty();
     }
 

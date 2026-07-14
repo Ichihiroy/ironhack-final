@@ -267,7 +267,8 @@ export default function App() {
               monthly={summary.totalMonthlyWaste}
               annual={summary.totalAnnualWaste}
               currency={summary.currency}
-              findingCount={summary.findingCount}
+              wastefulCount={summary.wastefulCount}
+              governanceCount={summary.byCategory.governance?.count ?? 0}
               totalCost={summary.totalMonthlyCost}
             />
 

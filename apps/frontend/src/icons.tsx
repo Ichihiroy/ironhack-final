@@ -130,8 +130,16 @@ export const ArrowDownIcon = (p: IconProps) => (
   </Svg>
 );
 
-/** Category glyphs — pause (idle), gauge (oversized), archive (forgotten). */
+/** Category glyphs — pause (idle), gauge (oversized), tag (governance), archive (forgotten). */
 export const CategoryIcon = ({ category, ...p }: IconProps & { category: Category }) => {
+  if (category === "governance") {
+    return (
+      <Svg {...p}>
+        <path d="M12 2 2 12l8 8 10-10V2h-8Z" />
+        <circle cx="16.5" cy="7.5" r="1.5" />
+      </Svg>
+    );
+  }
   if (category === "idle") {
     return (
       <Svg {...p}>

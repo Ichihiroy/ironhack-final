@@ -1,5 +1,5 @@
 // Mirrors the backend DTOs (com.ironhack.backend.overcast.web.dto.Dtos).
-export type Category = "idle" | "oversized" | "forgotten";
+export type Category = "idle" | "oversized" | "forgotten" | "governance";
 
 export interface CategoryTotal {
   count: number;
@@ -14,6 +14,8 @@ export interface ScanSummary {
   totalMonthlyWaste: number;
   totalAnnualWaste: number;
   findingCount: number;
+  /** Findings with actual money attached — excludes $0 governance flags. */
+  wastefulCount: number;
   byCategory: Record<Category, CategoryTotal>;
   warnings: string[];
 }

@@ -6,12 +6,21 @@ interface Props {
   monthly: number;
   annual: number;
   currency: string;
-  findingCount: number;
+  /** Findings with money attached — $0 governance flags excluded. */
+  wastefulCount: number;
+  governanceCount: number;
   totalCost: number;
 }
 
 /** The hero: a large monospace counter that animates up to the wasted total. */
-export function WasteCounter({ monthly, annual, currency, findingCount, totalCost }: Props) {
+export function WasteCounter({
+  monthly,
+  annual,
+  currency,
+  wastefulCount,
+  governanceCount,
+  totalCost,
+}: Props) {
   const animatedMonthly = useCountUp(monthly);
   const animatedAnnual = useCountUp(annual);
   const pct = totalCost > 0 ? Math.round((monthly / totalCost) * 100) : 0;
@@ -29,8 +38,15 @@ export function WasteCounter({ monthly, annual, currency, findingCount, totalCos
         <span className="per"> /yr</span>
       </div>
       <p className="hero-sub">
-        <strong>{findingCount}</strong> wasteful resources — about <strong>{pct}%</strong> of the{" "}
+        <strong>{wastefulCount}</strong> wasteful resources — about <strong>{pct}%</strong> of the{" "}
         {moneyCents(totalCost, currency)}/mo bill.
+        {governanceCount > 0 && (
+          <>
+            {" "}
+            Plus <strong>{governanceCount}</strong> resources missing governance tags (no money
+            impact).
+          </>
+        )}
       </p>
       <p className="hero-note">
         <CheckIcon size={13} /> Every figure computed by the deterministic rules engine

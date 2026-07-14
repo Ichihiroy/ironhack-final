@@ -93,7 +93,7 @@ class RulesEngineTest {
                 .filteredOn(m -> m.ruleId().equals("untagged"))
                 .isNotEmpty()
                 .allSatisfy(m -> {
-                    assertThat(m.category()).isEqualTo(Category.FORGOTTEN);
+                    assertThat(m.category()).isEqualTo(Category.GOVERNANCE);
                     assertThat(m.monthlySaving()).isEqualByComparingTo("0");
                 });
     }
