@@ -175,7 +175,7 @@ down. Details: [load-test/README.md](load-test/README.md).
 
 | Rubric line | Where it is satisfied |
 | ----------- | --------------------- |
-| **Architecture** — design & justification | [docs/architecture.md](docs/architecture.md) (mermaid + every decision with the rejected alternative), [docs/adr/](docs/adr/) 0001–0009 |
+| **Architecture** — design & justification | [docs/architecture.md](docs/architecture.md) (full diagram + mermaid + every decision with the rejected alternative), [docs/adr/](docs/adr/) 0001–0009 |
 | **Infra automation** — IaC, no clicks | [infra/terraform/](infra/terraform/) (AKS system+user autoscaled pools, ACR, Key Vault, Azure SQL + private endpoint, VNet, Log Analytics, workload identity, in-cluster platform via [platform.tf](infra/terraform/platform.tf)), [infra/bootstrap/](infra/bootstrap/) for the documented run-once Phase 0 |
 | **Infra CI/CD** — plan on PR, gated apply, policy checks | [.github/workflows/infra-plan.yml](.github/workflows/infra-plan.yml) (fmt, validate, Trivy IaC policy scan, plan-as-PR-comment), [.github/workflows/infra-apply.yml](.github/workflows/infra-apply.yml) (OIDC RO/RW split, `production` reviewer gate); state locking in [infra/bootstrap/README.md](infra/bootstrap/README.md), automated nightly drift detection in [.github/workflows/infra-drift.yml](.github/workflows/infra-drift.yml) + [docs/runbook.md](docs/runbook.md#infra-drift-detection) |
 | **App CI/CD** — two independent path-filtered pipelines | [.github/workflows/backend-ci-cd.yml](.github/workflows/backend-ci-cd.yml), [.github/workflows/frontend-ci-cd.yml](.github/workflows/frontend-ci-cd.yml) (test → build → Trivy gate → sha-tag push + cosign sign → GitOps promote to staging → gated production promote) |

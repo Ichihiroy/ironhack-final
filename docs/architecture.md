@@ -8,6 +8,10 @@ observability, and security. Swapping in a real product changes `apps/` only
 
 ## System diagram
 
+![Architecture diagram: GitHub OIDC pipelines, Terraform-provisioned Azure resources, and the AKS cluster with staging/production namespaces](architecture-diagram.png)
+
+The same system as a flowchart, showing the network boundaries:
+
 ```mermaid
 flowchart TB
     user((User))
