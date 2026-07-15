@@ -123,7 +123,7 @@ public class RulesEngine {
 
     private Optional<BigDecimal> prevGenVm(NormalizedResource r) {
         if (r.kind() != ResourceKind.VM) return Optional.empty();
-        boolean prevGen = config.prevGenSkus().stream().anyMatch(s -> s.equalsIgnoreCase(r.sku()));
+        boolean prevGen = config.prevGenSkus().stream().anyMatch(s -> skuMatches(s, r.sku()));
         return prevGen ? Optional.of(r.monthlyCost().multiply(config.prevGenDelta())) : Optional.empty();
     }
 
@@ -167,8 +167,27 @@ public class RulesEngine {
         return r.associatedResource() != null && r.associatedResource().isBlank();
     }
 
+    /**
+     * A prev_gen_skus entry ending with '*' is a case-insensitive prefix
+     * (covers AWS instance families like "t2.*" and GCP "n1*" SKU
+     * descriptions); anything else must match exactly.
+     */
+    private boolean skuMatches(String entry, String sku) {
+        if (entry.endsWith("*")) {
+            return sku.regionMatches(true, 0, entry, 0, entry.length() - 1);
+        }
+        return entry.equalsIgnoreCase(sku);
+    }
+
+    /**
+     * Nonprod by resource-group/project name OR by the env|environment tag
+     * value — AWS bills carry a numeric account id in the group slot, so the
+     * tag is the only classification signal there.
+     */
     private boolean nonprod(NormalizedResource r) {
-        return config.nonprodRgPattern().matcher(r.resourceGroup()).matches();
+        if (config.nonprodRgPattern().matcher(r.resourceGroup()).matches()) return true;
+        String env = r.tags().getOrDefault("env", r.tags().get("environment"));
+        return env != null && config.nonprodRgPattern().matcher(env).matches();
     }
 
     private boolean sustained(NormalizedResource r) {

@@ -4,12 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ironhack.backend.overcast.csv.AzureUsageCsvParser;
 import com.ironhack.backend.overcast.domain.Category;
+import com.ironhack.backend.overcast.domain.NormalizedResource;
+import com.ironhack.backend.overcast.domain.ResourceKind;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStreamReader;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -96,6 +99,61 @@ class RulesEngineTest {
                     assertThat(m.category()).isEqualTo(Category.GOVERNANCE);
                     assertThat(m.monthlySaving()).isEqualByComparingTo("0");
                 });
+    }
+
+    // ── strict-mode predicates (wildcard SKUs, env-tag nonprod, thresholds) ──
+
+    private NormalizedResource vm(String id, String rg, String sku,
+                                  BigDecimal hours, Map<String, String> tags) {
+        return new NormalizedResource(id, "vm", ResourceKind.VM, rg, "eu-west-1",
+                sku, sku, hours, BigDecimal.ZERO, new BigDecimal("100.00"),
+                tags, id + "-nic", null);
+    }
+
+    @Test
+    void wildcardSkuEntriesCatchAwsAndGcpPrevGenMachines() {
+        var aws = vm("i-old", "111122223333", "t2.large",
+                new BigDecimal("100"), Map.of("owner", "sam", "env", "prod"));
+        var gcp = vm("vm-old", "proj-core", "N1 Predefined Instance Core running in EMEA",
+                new BigDecimal("100"), Map.of("owner", "sam", "env", "prod"));
+
+        var result = engine.evaluate(List.of(aws, gcp));
+
+        assertThat(result.matches())
+                .extracting(RuleMatch::ruleId)
+                .containsExactly("prev_gen_vm", "prev_gen_vm");
+        // 100.00 × prev_gen_delta (0.20) each
+        assertThat(result.totalMonthlyWaste()).isEqualByComparingTo("40.00");
+    }
+
+    @Test
+    void envTagClassifiesNonprodWhenTheGroupSlotIsAnAccountId() {
+        // AWS CUR: resourceGroup is the numeric account id — only the env tag
+        // can mark the machine nonprod. 730h dev VM → nonprod_247, not RI.
+        var sustained = vm("i-nightly", "111122223333", "m5.xlarge",
+                new BigDecimal("730"), Map.of("owner", "ana", "env", "dev"));
+
+        var result = engine.evaluate(List.of(sustained));
+
+        assertThat(result.matches())
+                .extracting(RuleMatch::ruleId)
+                .containsExactly("nonprod_247");
+        // 100.00 × offhours_factor (0.65)
+        assertThat(result.totalMonthlyWaste()).isEqualByComparingTo("65.00");
+    }
+
+    @Test
+    void sustainedThresholdCatchesPartialMonthAlwaysOnCompute() {
+        // 520h ≥ sustained_hours (500) → prod VM flagged for reservation;
+        // the clean sample's 400h VM stays under the bar on purpose.
+        var prod = vm("vm-prod", "rg-prod-api", "Standard_D4s_v5",
+                new BigDecimal("520"), Map.of("owner", "sam", "env", "prod"));
+
+        var result = engine.evaluate(List.of(prod));
+
+        assertThat(result.matches())
+                .extracting(RuleMatch::ruleId)
+                .containsExactly("ondemand_vs_reserved");
     }
 
     @Test

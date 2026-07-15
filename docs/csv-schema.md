@@ -30,12 +30,12 @@ Headers are matched **case-insensitively**; the first alias found wins.
 | ---------------- | -------------------------- | :------: | ----- |
 | `resourceId` | `ResourceId`, `InstanceId` | ✅ | Full ARM id; its last segment is the display name. Rows are grouped by this. |
 | `resourceType` | `ResourceType`, `ConsumedService` | ✅ | e.g. `Microsoft.Compute/virtualMachines`. Drives resource classification. |
-| `resourceGroup` | `ResourceGroup`, `ResourceGroupName` | ✅ | Used by the non-prod pattern (`dev\|test\|sandbox\|qa`). |
+| `resourceGroup` | `ResourceGroup`, `ResourceGroupName` | ✅ | Used by the non-prod pattern (`dev\|test\|sandbox\|qa\|stage\|uat\|poc\|demo`); the `env` tag value is a fallback signal. |
 | `cost` | `Cost`, `CostInBillingCurrency`, `PreTaxCost` | ✅ | Per-row cost; **summed** across a resource's rows. |
 | `region` | `ResourceLocation`, `Location` | | |
 | `meter` | `MeterName` | | Descriptive only. |
 | `sku` | `SKU`, `MeterSubCategory`, `ServiceTier` | | Matched against the prev-gen SKU list and premium-storage check. |
-| `quantity` | `Quantity`, `UsageQuantity` | | **Summed**; for VMs this is usage hours, compared to `sustained_hours` (700). |
+| `quantity` | `Quantity`, `UsageQuantity` | | **Summed**; for VMs this is usage hours, compared to `sustained_hours` (500). |
 | `unitPrice` | `UnitPrice`, `EffectivePrice` | | Carried for reference. |
 | `currency` | `Currency`, `BillingCurrency`, `BillingCurrencyCode` | | First non-blank value becomes the scan currency (default `USD`). |
 | `tags` | `Tags` | | JSON object (braces optional). Matched against `required_tags` (`owner`, `env`). |
@@ -74,7 +74,7 @@ sample generator and the documented ETL add two optional columns so the
     rules stay silent rather than guess. (In the parser this is the
     `null` vs empty-string distinction on `associatedResource`.)
 - **`AgeDays`** — integer age of a snapshot; `old_snapshot` fires when it
-  exceeds `snapshot_age_days` (90). Absent/blank → rule stays silent.
+  exceeds `snapshot_age_days` (30). Absent/blank → rule stays silent.
 
 Without these columns the cost/utilization rules (prev-gen, non-prod 24/7,
 reserved-instance, premium storage) still work from cost, SKU, resource group,
@@ -105,7 +105,7 @@ headers are bare words. The scan's `source_cloud` records which one matched.
 | ---------------- | -------------- | :------: | ----- |
 | `resourceId` | `lineItem/ResourceId` | ✅ | Line items without one (RI fees, taxes, support) are dropped. |
 | `resourceType` | `lineItem/ProductCode` + `lineItem/UsageType` | | Kind: `BoxUsage`→VM, `EBS:Volume`→disk, `EBS:Snapshot`→snapshot, `ElasticIP`/`IdleAddress`→public IP. |
-| `resourceGroup` | `lineItem/UsageAccountId` | | AWS has no resource groups; the numeric account id never matches the non-prod name pattern, so RG-based rules stay silent. |
+| `resourceGroup` | `lineItem/UsageAccountId` | | AWS has no resource groups; the numeric account id never matches the non-prod name pattern, so nonprod classification falls back to the `env`/`environment` tag value. |
 | `region` | `product/region` | | |
 | `sku` | `product/instanceType` | | |
 | `quantity` | `lineItem/UsageAmount` | | Summed per resource, like Azure. |
@@ -115,8 +115,10 @@ headers are bare words. The scan's `source_cloud` records which one matched.
 | `tags` | `resourceTags/user:*` | | One column per tag key; merged across a resource's line items. |
 | `associatedResource`, `ageDays` | *(enricher-added, optional)* | | Same enrichment contract as Azure. |
 
-The prev-gen SKU list in `rules-config.yaml` is Azure-flavored, so `prev_gen_vm`
-rarely fires on AWS bills; usage- and cost-based rules work identically.
+The prev-gen SKU list in `rules-config.yaml` mixes exact Azure names with
+prefix wildcards (`t2.*`, `m4.*`, … and GCP `n1*`), so `prev_gen_vm` fires on
+previous-generation AWS instance families and GCP N1 machines too; usage- and
+cost-based rules work identically.
 
 ## GCP detailed billing export
 
@@ -130,7 +132,7 @@ scanned. Parser:
 | ---------------- | ---------- | :------: | ----- |
 | `resourceId` | `resource.global_name`, `resource.name` | ✅ | Rows without one (support fees, untied charges) are dropped. |
 | `resourceType` | `service.description` + `sku.description` | | Kind from the SKU description: `Instance Core/Ram`→VM, `Storage PD Capacity`→disk, `…Snapshot`→snapshot, `Static/External Ip`→public IP. |
-| `resourceGroup` | `project.id`, `project.name` | | The project fills the slot, so the non-prod name pattern (`dev\|test\|sandbox\|qa`) works on project ids. |
+| `resourceGroup` | `project.id`, `project.name` | | The project fills the slot, so the non-prod name pattern (`dev\|test\|sandbox\|qa\|stage\|uat\|poc\|demo`) works on project ids. |
 | `region` | `location.region`, `location.location` | | |
 | `sku` / `meter` | `sku.description` | | |
 | `quantity` | `usage.amount` | | Summed per resource. |

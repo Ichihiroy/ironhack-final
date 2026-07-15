@@ -12,11 +12,15 @@ constants:
   offhours_factor: 0.65     # nonprod running 24/7 vs business hours + weekends off
   ri_discount: 0.30         # 1y reserved instance vs pay-as-you-go, conservative
   premium_delta: 0.40       # Premium SSD vs Standard SSD price gap
-  snapshot_age_days: 90     # older than this with no lifecycle policy = forgotten
-  sustained_hours: 700      # ≥700h of 730h month = effectively always-on
-  nonprod_rg_pattern: "(?i).*(dev|test|sandbox|qa).*"
+  snapshot_age_days: 30     # older than this with no lifecycle policy = forgotten
+  sustained_hours: 500      # ≥500h of 730h month (~68%) = reservation/off-hours candidate
+  # matched against the resource group / project name AND the env|environment
+  # tag value, so AWS (numeric account id) and GCP bills classify too
+  nonprod_rg_pattern: "(?i).*(dev|test|sandbox|qa|stage|uat|poc|demo).*"
   # each entry may list accepted aliases separated by "|"
   required_tags: [owner, "env|environment"]
+  # exact match, or prefix match when the entry ends with "*" — the wildcards
+  # cover AWS previous-gen instance families and GCP N1 machine types
   prev_gen_skus:
     - Standard_A2
     - Standard_A4
@@ -28,6 +32,14 @@ constants:
     - Standard_DS4_v2
     - Standard_F4
     - Standard_F8
+    - "t2.*"
+    - "m3.*"
+    - "m4.*"
+    - "c3.*"
+    - "c4.*"
+    - "r3.*"
+    - "r4.*"
+    - "n1*"
 
 rules:
   - id: unattached_disk
@@ -54,28 +66,28 @@ rules:
   - id: prev_gen_vm
     name: Previous-generation VM SKU
     category: oversized
-    predicate: "resource is a VM AND sku ∈ prev_gen_skus"
+    predicate: "resource is a VM AND sku matches prev_gen_skus (exact, or prefix when the entry ends with '*')"
     saving: "monthly_cost × prev_gen_delta"
     remediation: "Resize '{resource}' from {sku} to the current-generation equivalent (same vCPU/RAM, ~20% cheaper)."
 
   - id: nonprod_247
     name: Non-prod running 24/7
     category: idle
-    predicate: "resource is a VM AND resource_group matches nonprod_rg_pattern AND usage hours ≥ sustained_hours"
+    predicate: "resource is a VM AND (resource_group OR env tag) matches nonprod_rg_pattern AND usage hours ≥ sustained_hours"
     saving: "monthly_cost × offhours_factor"
     remediation: "Add an auto-shutdown schedule to '{resource}' in {rg} (nights + weekends off)."
 
   - id: ondemand_vs_reserved
     name: Sustained on-demand compute
     category: oversized
-    predicate: "resource is a VM AND usage hours ≥ sustained_hours AND resource_group is NOT nonprod (steady prod load is the reservation candidate; nonprod is handled by nonprod_247)"
+    predicate: "resource is a VM AND usage hours ≥ sustained_hours AND NOT nonprod by resource_group or env tag (steady prod load is the reservation candidate; nonprod is handled by nonprod_247)"
     saving: "monthly_cost × ri_discount"
     remediation: "Buy a 1-year reserved instance for '{resource}' — it ran the entire month on-demand."
 
   - id: premium_storage_nonprod
     name: Premium storage in non-prod
     category: oversized
-    predicate: "resource is an ATTACHED premium disk AND resource_group matches nonprod_rg_pattern (unattached disks are already claimed in full by unattached_disk)"
+    predicate: "resource is an ATTACHED premium disk AND (resource_group OR env tag) matches nonprod_rg_pattern (unattached disks are already claimed in full by unattached_disk)"
     saving: "monthly_cost × premium_delta"
     remediation: "Downgrade '{resource}' in {rg} from Premium to Standard SSD — non-prod rarely needs the IOPS."
 
