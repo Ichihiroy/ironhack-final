@@ -105,7 +105,7 @@ Infra rollback: `git revert` the infra commit → PR → plan → gated apply.
 - **Cluster**: raise `user_node_max_count` in `infra/terraform` via PR → gated
   apply. The cluster autoscaler handles the rest.
 
-## Incident response — the four alerts
+## Incident response — the alerts
 
 ### High 5xx rate (`BackendHigh5xxRate`, critical)
 1. Scope it: Grafana → Backend API dashboard — all URIs or one? One namespace or both?
@@ -139,6 +139,52 @@ Infra rollback: `git revert` the infra commit → PR → plan → gated apply.
    user pool is at `max_count`, raise it (Scale, above).
 3. Selector/taint mismatch (e.g. missing `workload=apps` label on new pools) →
    fix the pool/values, not the pod.
+
+### DB pool exhausted (`BackendDbPoolExhausted`, critical)
+Threads are queueing for connections — every queued request adds latency and
+eventually times out.
+1. Backend API dashboard → *DB connection pool*: is `active` pinned at `max`
+   while `pending` climbs? That's demand, not a leak — check whether request
+   rate (or the k6 `db_reads` scenario) just grew.
+2. Flat traffic but pool pinned → slow queries holding connections: check
+   Azure SQL metrics (DTU cap, blocking) in the portal.
+3. Mitigate: scale replicas (each pod brings its own pool), then right-size
+   `spring.datasource.hikari.maximum-pool-size` via values PR — respect the
+   Azure SQL tier's connection ceiling across ALL pods.
+
+### JVM heap pressure (`BackendJvmHeapPressure`, warning)
+1. Backend API dashboard → *JVM heap used / max*: steady climb that never
+   drops after GC = leak; sawtooth near the top = undersized heap.
+2. Leak suspicion → capture before the OOM:
+   `kubectl -n <ns> exec <pod> -- jcmd 1 GC.heap_dump /tmp/heap.hprof`
+3. Undersized → raise the container memory limit via values PR (the JVM sizes
+   its heap from the cgroup limit).
+
+### Memory near limit (`ContainerMemoryNearLimit`, warning)
+The next allocation spike gets the container OOMKilled (exit 137) — this alert
+is the early warning for `PodCrashLooping`.
+1. Platform dashboard → *Saturation — memory vs limit*: one pod or all?
+   All replicas trending together = the limit is simply too small for the
+   workload → raise `resources.limits.memory` via values PR.
+2. One pod diverging → likely a leak; see JVM heap pressure above.
+
+### CPU throttling (`ContainerCpuThrottled`, warning)
+The container wants more CPU than its limit; the kernel is inserting pauses —
+this inflates p95 even though node CPU looks fine.
+1. Platform dashboard → *Saturation — CPU throttling ratio*: which container?
+2. Sustained under normal traffic → raise `resources.limits.cpu` (or requests,
+   so the HPA target reflects reality) via values PR.
+3. During a load test this firing briefly is expected — it's the signal the
+   HPA acts on; only act if it persists after scale-out settles.
+
+### HPA at max (`HpaAtMaxReplicas`, warning)
+Scaling headroom is gone: more load now degrades latency instead of adding
+pods.
+1. `kubectl -n <ns> get hpa backend` — current CPU vs target. At max AND above
+   target = genuinely saturated; at max but below target = it will scale down
+   soon, no action.
+2. Raise `autoscaling.maxReplicas` via values PR; check user-pool
+   `max_count` has node headroom for the extra pods (Scale, above).
 
 ## Useful one-liners
 

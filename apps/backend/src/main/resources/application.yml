@@ -52,3 +52,13 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      # Publish real histogram buckets (…_seconds_bucket) — without this,
+      # Micrometer emits only count/sum/max and every histogram_quantile()
+      # in the Grafana dashboards / BackendHighP95Latency alert is empty.
+      percentiles-histogram:
+        http.server.requests: true
+      # Extra exact bucket boundaries so the 300 ms SLO line in alerts and
+      # k6 thresholds can be read straight off a bucket edge.
+      slo:
+        http.server.requests: 50ms,100ms,200ms,300ms,500ms,1s,2s

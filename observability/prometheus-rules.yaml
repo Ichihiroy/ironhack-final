@@ -34,6 +34,65 @@ spec:
             summary: "Backend p95 latency above 300ms for 10m"
             runbook: "docs/runbook.md#elevated-p95-latency"
 
+    - name: backend-app
+      rules:
+        - alert: BackendDbPoolExhausted
+          expr: |
+            max by (namespace) (hikaricp_connections_pending{application="backend"}) > 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Backend threads in {{ $labels.namespace }} are queueing for DB connections (Hikari pool exhausted) for 5m"
+            runbook: "docs/runbook.md#db-pool-exhausted"
+        - alert: BackendJvmHeapPressure
+          expr: |
+            sum by (namespace, pod) (jvm_memory_used_bytes{application="backend", area="heap"})
+              /
+            sum by (namespace, pod) (jvm_memory_max_bytes{application="backend", area="heap"} > 0) > 0.90
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} JVM heap above 90% for 10m — GC pressure, OOM risk"
+            runbook: "docs/runbook.md#jvm-heap-pressure"
+
+    - name: saturation
+      rules:
+        - alert: ContainerMemoryNearLimit
+          expr: |
+            max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~"app-.*", container!=""})
+              /
+            max by (namespace, pod, container) (kube_pod_container_resource_limits{namespace=~"app-.*", resource="memory"}) > 0.90
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) memory above 90% of limit for 10m — OOMKill imminent"
+            runbook: "docs/runbook.md#memory-near-limit"
+        - alert: ContainerCpuThrottled
+          expr: |
+            sum by (namespace, pod, container) (increase(container_cpu_cfs_throttled_periods_total{namespace=~"app-.*", container!=""}[5m]))
+              /
+            sum by (namespace, pod, container) (increase(container_cpu_cfs_periods_total{namespace=~"app-.*", container!=""}[5m])) > 0.25
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.pod }} ({{ $labels.container }}) CPU-throttled in >25% of periods for 15m — latency is being added by the CPU limit"
+            runbook: "docs/runbook.md#cpu-throttling"
+        - alert: HpaAtMaxReplicas
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace=~"app-.*"}
+              >=
+            kube_horizontalpodautoscaler_spec_max_replicas{namespace=~"app-.*"}
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} pinned at maxReplicas for 15m — no headroom left to absorb more load"
+            runbook: "docs/runbook.md#hpa-at-max"
+
     - name: workloads
       rules:
         - alert: PodCrashLooping

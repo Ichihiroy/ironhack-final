@@ -9,6 +9,7 @@ namespace: monitoring
 
 resources:
   - servicemonitor-backend.yaml
+  - servicemonitor-ingress-nginx.yaml
   - prometheus-rules.yaml
 
 generatorOptions:
@@ -25,3 +26,6 @@ configMapGenerator:
   - name: dash-platform
     files:
       - dashboards/platform.json
+  - name: dash-edge-services
+    files:
+      - dashboards/edge-services.json

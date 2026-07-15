@@ -1,0 +1,77 @@
+{
+  "title": "Edge — per-service latency and errors (NGINX ingress)",
+  "uid": "edge-services",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "tags": ["platform", "edge"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Request rate by service (req/s)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (namespace, service) (rate(nginx_ingress_controller_requests{namespace=~\"app-.*\"}[2m]))",
+          "legendFormat": "{{namespace}}/{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "5xx ratio by service",
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (namespace, service) (rate(nginx_ingress_controller_requests{namespace=~\"app-.*\", status=~\"5..\"}[5m])) / sum by (namespace, service) (rate(nginx_ingress_controller_requests{namespace=~\"app-.*\"}[5m]))",
+          "legendFormat": "{{namespace}}/{{service}} 5xx",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Latency p50 / p95 / p99 by service (s)",
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, namespace, service) (rate(nginx_ingress_controller_request_duration_seconds_bucket{namespace=~\"app-.*\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{service}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, namespace, service) (rate(nginx_ingress_controller_request_duration_seconds_bucket{namespace=~\"app-.*\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{service}} p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, namespace, service) (rate(nginx_ingress_controller_request_duration_seconds_bucket{namespace=~\"app-.*\"}[5m])))",
+          "legendFormat": "{{namespace}}/{{service}} p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "heatmap",
+      "title": "Edge latency distribution — histogram heatmap",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "options": { "calculate": false, "yAxis": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "sum by (le) (increase(nginx_ingress_controller_request_duration_seconds_bucket{namespace=~\"app-.*\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

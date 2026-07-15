@@ -56,6 +56,13 @@ resource "helm_release" "ingress_nginx" {
           "service.beta.kubernetes.io/azure-load-balancer-resource-group" = data.azurerm_resource_group.main.name
         }
       }
+      # Per-service edge latency/error metrics (the frontend has no app
+      # metrics of its own). Only the metrics Service is created here; the
+      # ServiceMonitor lives in observability/ (synced by Argo CD) so this
+      # release never races the kube-prometheus-stack CRDs.
+      metrics = {
+        enabled = true
+      }
     }
   })]
 

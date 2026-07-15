@@ -61,9 +61,9 @@ in one diagram:
 | [`infra/terraform/`](infra/terraform/) | Everything else in Azure: AKS (two autoscaled node pools), ACR, Key Vault, Azure SQL behind a private endpoint, VNet, Log Analytics — plus the in-cluster platform (Argo CD, Kyverno, ingress-nginx, cert-manager, monitoring), all from one apply. |
 | [`deploy/`](deploy/) | Helm charts for both apps: health probes, autoscaling (HPA), disruption budgets, pod spread, network policies, Key Vault secret mounting. |
 | [`gitops/`](gitops/) | What Argo CD watches: per-environment image tags in `values/` (written by CI, never by hand) and Kyverno admission policies in `policies/`. **This folder is the deploy button.** |
-| [`observability/`](observability/) | Prometheus + Grafana configuration: scrape targets, two dashboards, four alert rules. |
+| [`observability/`](observability/) | Prometheus + Grafana configuration: scrape targets (backend + NGINX ingress), three dashboards, nine alert rules. |
 | [`security/`](security/) | Default-deny network policies, RBAC, the secret-mounting reference, and [SECURITY.md](security/SECURITY.md) — the index of every security control. |
-| [`load-test/`](load-test/) | k6 script: 350 req/s sustained, p95 ≤ 300 ms, makes the autoscaler climb on camera. |
+| [`load-test/`](load-test/) | k6 script: 350 req/s cached + 30 req/s DB-backed, per-scenario p95 budgets, makes the autoscaler climb on camera. |
 | [`.github/`](.github/workflows/) | Six workflows: infra plan / apply / nightly drift check, backend + frontend CI/CD, secret scanning. All authenticate via OIDC — the repo holds **no cloud credentials**. |
 | [`docs/`](docs/) | Architecture (diagrams + every decision justified), operations runbook, and 9 numbered ADRs recording *why* each non-obvious choice was made. |
 
@@ -145,9 +145,13 @@ tell the difference — it only ever sees `SPRING_DATASOURCE_*` env vars.
 k6 run -e BASE_URL=https://<host> load-test/items-load.js
 ```
 
-350 req/s sustained against `/api/items`, asserting p95 ≤ 300 ms, while the
-Grafana **Platform** dashboard shows HPA replicas climbing 3 → max and back
-down. Details: [load-test/README.md](load-test/README.md).
+Two scenarios at once: 350 req/s sustained against the Redis-cached
+`/api/scans/demo/findings` (p95 ≤ 300 ms — this is what trips the HPA), plus
+30 req/s against the deliberately uncached `/api/scans/demo/optimized`
+(p95 ≤ 500 ms — a real database round-trip per request, so the latency number
+is honest). Meanwhile the Grafana **Platform** dashboard shows HPA replicas
+climbing 3 → max and back down. Details:
+[load-test/README.md](load-test/README.md).
 
 ## Five ideas that explain most of the design
 
@@ -182,7 +186,7 @@ down. Details: [load-test/README.md](load-test/README.md).
 | **GitOps** — pull-based deploys, git as source of truth | [gitops/](gitops/), Argo CD installed by [infra/terraform/gitops.tf](infra/terraform/gitops.tf), [docs/adr/0008](docs/adr/0008-pull-based-gitops-argocd.md) (self-heal, prune, `git revert` rollback) |
 | **Kubernetes quality** — probes, HPA, PDB, spread, resources | [deploy/backend/](deploy/backend/), [deploy/frontend/](deploy/frontend/) (helm lint + template clean) |
 | **Security** — secrets, identity, network, supply chain | [security/SECURITY.md](security/SECURITY.md) (index of all controls), [security/networkpolicies.yaml](security/networkpolicies.yaml), [security/rbac.yaml](security/rbac.yaml), Key Vault CSI in [deploy/backend/templates/secretproviderclass.yaml](deploy/backend/templates/secretproviderclass.yaml), Trivy gates in both app workflows, cosign signing + Kyverno admission policies ([docs/adr/0009](docs/adr/0009-image-signing-admission-policies.md), [gitops/policies/](gitops/policies/)), gitleaks secret scan ([.github/workflows/secret-scan.yml](.github/workflows/secret-scan.yml)), Dependabot + SHA-pinned actions ([.github/dependabot.yml](.github/dependabot.yml)) |
-| **Observability** — metrics, dashboards, alerts | [observability/](observability/) (kube-prometheus-stack values, ServiceMonitor → `/actuator/prometheus`, 2 Grafana dashboards, 4 Alertmanager rules), responses in [docs/runbook.md](docs/runbook.md) |
+| **Observability** — metrics, dashboards, alerts | [observability/](observability/) (kube-prometheus-stack values, ServiceMonitors → backend `/actuator/prometheus` + NGINX ingress, 3 Grafana dashboards incl. per-service latency histograms + saturation, 9 alert rules), responses in [docs/runbook.md](docs/runbook.md) |
 | **Scalability** — HPA + cluster autoscaler, proven | HPAs in both charts, autoscaled node pools in [infra/terraform/aks.tf](infra/terraform/aks.tf), demo in [load-test/](load-test/) |
 | **Operations** — deploy, rollback, rotation, incidents | [docs/runbook.md](docs/runbook.md) |
 

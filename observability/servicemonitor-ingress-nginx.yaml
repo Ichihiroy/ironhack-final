@@ -1,0 +1,23 @@
+# Scrapes the NGINX ingress controller (metrics Service enabled in
+# infra/terraform/platform.tf). honorLabels keeps the controller's own
+# namespace/service labels — they name the *backend* each request was routed
+# to, which is what the per-service edge latency panels group by.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ingress-nginx
+  namespace: monitoring
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+spec:
+  namespaceSelector:
+    matchNames:
+      - ingress-nginx
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  endpoints:
+    - port: metrics
+      interval: 15s
+      honorLabels: true

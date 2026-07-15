@@ -71,6 +71,86 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Latency p95 by endpoint (s)",
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{application=\"backend\", uri!~\"/actuator.*\"}[5m])))",
+          "legendFormat": "{{uri}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "heatmap",
+      "title": "Latency distribution — histogram heatmap",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "options": { "calculate": false, "yAxis": { "unit": "s" } },
+      "targets": [
+        {
+          "expr": "sum by (le) (increase(http_server_requests_seconds_bucket{application=\"backend\", uri!~\"/actuator.*\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "legendFormat": "{{le}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "DB connection pool (HikariCP) — active / pending / max",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum by (namespace) (hikaricp_connections_active{application=\"backend\"})",
+          "legendFormat": "{{namespace}} active",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (namespace) (hikaricp_connections_pending{application=\"backend\"})",
+          "legendFormat": "{{namespace}} pending (threads waiting)",
+          "refId": "B"
+        },
+        {
+          "expr": "sum by (namespace) (hikaricp_connections_max{application=\"backend\"})",
+          "legendFormat": "{{namespace}} max",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "JVM heap used / max",
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum by (namespace, pod) (jvm_memory_used_bytes{application=\"backend\", area=\"heap\"}) / sum by (namespace, pod) (jvm_memory_max_bytes{application=\"backend\", area=\"heap\"} > 0)",
+          "legendFormat": "{{namespace}}/{{pod}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Saturation — memory usage vs limit (backend pods)",
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 24 },
+      "targets": [
+        {
+          "expr": "max by (namespace, pod) (container_memory_working_set_bytes{namespace=~\"app-.*\", pod=~\"backend.*\", container=\"backend\"}) / max by (namespace, pod) (kube_pod_container_resource_limits{namespace=~\"app-.*\", pod=~\"backend.*\", container=\"backend\", resource=\"memory\"})",
+          "legendFormat": "{{namespace}}/{{pod}} mem/limit",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }

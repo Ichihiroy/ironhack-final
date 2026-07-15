@@ -115,6 +115,34 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Saturation — memory vs limit (app namespaces)",
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "max by (namespace, pod, container) (container_memory_working_set_bytes{namespace=~\"app-.*\", container!=\"\"}) / max by (namespace, pod, container) (kube_pod_container_resource_limits{namespace=~\"app-.*\", resource=\"memory\"})",
+          "legendFormat": "{{namespace}}/{{pod}}/{{container}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Saturation — CPU throttling ratio (app namespaces)",
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1 } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "sum by (namespace, pod, container) (increase(container_cpu_cfs_throttled_periods_total{namespace=~\"app-.*\", container!=\"\"}[5m])) / sum by (namespace, pod, container) (increase(container_cpu_cfs_periods_total{namespace=~\"app-.*\", container!=\"\"}[5m]))",
+          "legendFormat": "{{namespace}}/{{pod}}/{{container}} throttled",
+          "refId": "A"
+        }
+      ]
     }
   ]
 }
